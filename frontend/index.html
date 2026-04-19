@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DropMate v2</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 24px 32px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+    header h1 span { color: #3b82f6; }
+
+    .badge {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+    .badge.live   { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .badge.syncing { background: #172554; color: #60a5fa; border: 1px solid #1e40af; }
+    .badge.error  { background: #2d0b0b; color: #f87171; border: 1px solid #7f1d1d; }
+
+    main { max-width: 960px; margin: 0 auto; padding: 32px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .stat-card {
+      background: #161616;
+      border: 1px solid #222;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .stat-card .label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card .sub   { font-size: 12px; color: #555; margin-top: 4px; }
+
+    .value.green { color: #4ade80; }
+    .value.red   { color: #f87171; }
+    .value.blue  { color: #60a5fa; }
+
+    .section { background: #161616; border: 1px solid #222; border-radius: 10px; overflow: hidden; }
+    .section-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .section-header h2 { font-size: 14px; font-weight: 600; }
+
+    button {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #1e3a5f; color: #4b6fa5; cursor: not-allowed; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left;
+      font-size: 11px;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 12px 20px;
+      border-bottom: 1px solid #1f1f1f;
+    }
+    td { padding: 13px 20px; font-size: 13px; border-bottom: 1px solid #1a1a1a; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #1a1a1a; }
+
+    .pill {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .pill.success { background: #052e16; color: #4ade80; }
+    .pill.error   { background: #2d0b0b; color: #f87171; }
+    .pill.running { background: #172554; color: #60a5fa; }
+
+    .empty { text-align: center; padding: 40px; color: #444; font-size: 13px; }
+
+    footer { text-align: center; color: #333; font-size: 11px; padding: 32px; }
+
+    @media (max-width: 640px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      main { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Drop<span>Mate</span> v2</h1>
+  <span class="badge live" id="header-badge">Live</span>
+</header>
+
+<main>
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Last Sync</div>
+      <div class="value blue" id="stat-time">—</div>
+      <div class="sub" id="stat-time-sub">Never</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">SKUs Updated</div>
+      <div class="value green" id="stat-updated">—</div>
+      <div class="sub">last run</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total SKUs</div>
+      <div class="value" id="stat-total">—</div>
+      <div class="sub">from CWR</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Errors</div>
+      <div class="value red" id="stat-errors">—</div>
+      <div class="sub">last run</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Sync History</h2>
+      <button id="sync-btn" onclick="triggerSync()">Sync Now</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Status</th>
+          <th>Total</th>
+          <th>Updated</th>
+          <th>Errors</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody id="runs-body">
+        <tr><td colspan="6" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<footer>DropMate v2 — CWR → Walmart sync · refreshes every 30s</footer>
+
+<script>
+  const API = 'RAILWAY_API_URL_PLACEHOLDER';
+
+  function timeAgo(dateStr) {
+    if (!dateStr) return '—';
+    const diff = Math.floor((Date.now() - new Date(dateStr + 'Z')) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return `${Math.floor(diff/86400)}d ago`;
+  }
+
+  function formatTime(dateStr) {
+    if (!dateStr) return '—';
+    return new Date(dateStr + 'Z').toLocaleString();
+  }
+
+  async function loadStatus() {
+    try {
+      const res = await fetch(`${API}/api/status`);
+      const data = await res.json();
+      const last = data.last_run;
+
+      const badge = document.getElementById('header-badge');
+      if (data.is_running) {
+        badge.textContent = 'Syncing…';
+        badge.className = 'badge syncing';
+      } else if (last?.status === 'error') {
+        badge.textContent = 'Error';
+        badge.className = 'badge error';
+      } else {
+        badge.textContent = 'Live';
+        badge.className = 'badge live';
+      }
+
+      if (last) {
+        document.getElementById('stat-time').textContent = timeAgo(last.completed_at);
+        document.getElementById('stat-time-sub').textContent = formatTime(last.completed_at);
+        document.getElementById('stat-updated').textContent = last.updated ?? '—';
+        document.getElementById('stat-total').textContent = last.total ?? '—';
+        document.getElementById('stat-errors').textContent = last.errors ?? '—';
+      }
+    } catch (e) {
+      console.error('Status fetch failed:', e);
+    }
+  }
+
+  async function loadRuns() {
+    try {
+      const res = await fetch(`${API}/api/runs?limit=20`);
+      const runs = await res.json();
+      const tbody = document.getElementById('runs-body');
+
+      if (!runs.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">No syncs yet</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = runs.map(r => `
+        <tr>
+          <td>${formatTime(r.started_at)}</td>
+          <td><span class="pill ${r.status}">${r.status}</span></td>
+          <td>${r.total ?? '—'}</td>
+          <td>${r.updated ?? '—'}</td>
+          <td>${r.errors ?? '—'}</td>
+          <td>${r.duration_s != null ? r.duration_s + 's' : '—'}</td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      console.error('Runs fetch failed:', e);
+    }
+  }
+
+  async function triggerSync() {
+    const btn = document.getElementById('sync-btn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+    try {
+      await fetch(`${API}/api/sync`, { method: 'POST' });
+      setTimeout(() => { loadStatus(); loadRuns(); }, 2000);
+    } catch (e) {
+      console.error('Trigger failed:', e);
+    }
+    setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync Now'; }, 5000);
+  }
+
+  function refresh() { loadStatus(); loadRuns(); }
+  refresh();
+  setInterval(refresh, 30000);
+</script>
+
+</body>
+</html>

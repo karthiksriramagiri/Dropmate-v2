@@ -7,16 +7,20 @@ import uuid
 import time
 import logging
 import os
-from apscheduler.schedulers.blocking import BlockingScheduler
+import sqlite3
+import threading
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from apscheduler.schedulers.background import BackgroundScheduler
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Config (set these as env vars in Railway) ---
-SFTP_HOST     = os.getenv('SFTP_HOST', 'edi.cwrdistribution.com')
-SFTP_PORT     = int(os.getenv('SFTP_PORT', '22'))
-SFTP_USER     = os.getenv('SFTP_USER', 'hashshop')
-SFTP_PASS     = os.getenv('SFTP_PASS', 'bvsPN7ge')
+# --- Config ---
+SFTP_HOST      = os.getenv('SFTP_HOST', 'edi.cwrdistribution.com')
+SFTP_PORT      = int(os.getenv('SFTP_PORT', '22'))
+SFTP_USER      = os.getenv('SFTP_USER', 'hashshop')
+SFTP_PASS      = os.getenv('SFTP_PASS', 'bvsPN7ge')
 INVENTORY_PATH = '/out/inventory.csv'
 
 WM_CLIENT_ID     = os.getenv('WM_CLIENT_ID', '47f10f25-5746-41a6-be4a-db812f949894')
@@ -24,8 +28,44 @@ WM_CLIENT_SECRET = os.getenv('WM_CLIENT_SECRET', 'C11fEdT35CMZfGxND0q54-LgDsjKXs
 WM_BASE_URL      = 'https://marketplace.walmartapis.com'
 
 SYNC_INTERVAL_MINUTES = int(os.getenv('SYNC_INTERVAL_MINUTES', '15'))
+DB_PATH               = os.getenv('DB_PATH', 'dropmate.db')
+PORT                  = int(os.getenv('PORT', '8080'))
 
+# --- Database ---
+def get_db():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
+def init_db():
+    with get_db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS sync_runs (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at   TEXT DEFAULT (datetime('now')),
+                completed_at TEXT,
+                status       TEXT DEFAULT 'running',
+                total        INTEGER DEFAULT 0,
+                updated      INTEGER DEFAULT 0,
+                errors       INTEGER DEFAULT 0,
+                duration_s   REAL
+            );
+        """)
+
+# --- CWR ---
+def fetch_cwr_inventory():
+    transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
+    transport.connect(username=SFTP_USER, password=SFTP_PASS)
+    sftp = paramiko.SFTPClient.from_transport(transport)
+    try:
+        with sftp.open(INVENTORY_PATH, 'r') as f:
+            content = f.read().decode('utf-8')
+        return list(csv.DictReader(io.StringIO(content)))
+    finally:
+        sftp.close()
+        transport.close()
+
+# --- Walmart ---
 def get_walmart_token():
     creds = base64.b64encode(f"{WM_CLIENT_ID}:{WM_CLIENT_SECRET}".encode()).decode()
     resp = requests.post(
@@ -43,22 +83,8 @@ def get_walmart_token():
     resp.raise_for_status()
     return resp.json()['access_token']
 
-
-def fetch_cwr_inventory():
-    transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
-    transport.connect(username=SFTP_USER, password=SFTP_PASS)
-    sftp = paramiko.SFTPClient.from_transport(transport)
-    try:
-        with sftp.open(INVENTORY_PATH, 'r') as f:
-            content = f.read().decode('utf-8')
-        return list(csv.DictReader(io.StringIO(content)))
-    finally:
-        sftp.close()
-        transport.close()
-
-
 def update_inventory(token, sku, qty):
-    resp = requests.put(
+    return requests.put(
         f'{WM_BASE_URL}/v3/inventory',
         params={'sku': sku},
         headers={
@@ -72,43 +98,44 @@ def update_inventory(token, sku, qty):
         json={'sku': str(sku), 'quantity': {'unit': 'EACH', 'amount': int(qty)}},
         timeout=15,
     )
-    return resp
 
-
+# --- Sync ---
 def sync():
     logger.info("=== Starting CWR → Walmart sync ===")
     start = time.time()
 
-    # 1. Fetch inventory from CWR SFTP
+    with get_db() as conn:
+        cur = conn.execute("INSERT INTO sync_runs (status) VALUES ('running')")
+        run_id = cur.lastrowid
+
     try:
         records = fetch_cwr_inventory()
         logger.info(f"Fetched {len(records)} SKUs from CWR")
     except Exception as e:
         logger.error(f"SFTP fetch failed: {e}")
+        with get_db() as conn:
+            conn.execute("UPDATE sync_runs SET status='error', completed_at=datetime('now') WHERE id=?", (run_id,))
         return
 
-    # 2. Get Walmart token
     try:
         token = get_walmart_token()
     except Exception as e:
         logger.error(f"Walmart auth failed: {e}")
+        with get_db() as conn:
+            conn.execute("UPDATE sync_runs SET status='error', completed_at=datetime('now') WHERE id=?", (run_id,))
         return
 
-    # 3. Push each SKU to Walmart
     updated = skipped = errors = 0
     for row in records:
         sku = str(row.get('sku') or row.get('SKU') or '').strip()
         qty = row.get('qty') or row.get('QTY') or '0'
-
         if not sku:
             skipped += 1
             continue
-
         try:
             qty_int = int(float(str(qty).strip() or '0'))
         except ValueError:
             qty_int = 0
-
         try:
             resp = update_inventory(token, sku, qty_int)
             if resp.status_code == 200:
@@ -119,17 +146,61 @@ def sync():
         except Exception as e:
             logger.error(f"SKU {sku} failed: {e}")
             errors += 1
+        time.sleep(0.05)
 
-        time.sleep(0.05)  # ~20 req/s, well within Walmart rate limits
+    duration = round(time.time() - start, 1)
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE sync_runs SET status='success', completed_at=datetime('now'),
+            total=?, updated=?, errors=?, duration_s=? WHERE id=?
+        """, (len(records), updated, errors, duration, run_id))
 
-    elapsed = round(time.time() - start, 1)
-    logger.info(f"Done in {elapsed}s — updated: {updated}, skipped: {skipped}, errors: {errors}")
+    logger.info(f"Done in {duration}s — updated: {updated}, skipped: {skipped}, errors: {errors}")
 
+# --- Flask ---
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/status')
+def status():
+    with get_db() as conn:
+        last = conn.execute(
+            "SELECT * FROM sync_runs WHERE status != 'running' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        is_running = conn.execute(
+            "SELECT COUNT(*) as c FROM sync_runs WHERE status='running'"
+        ).fetchone()['c'] > 0
+    return jsonify({
+        'is_running': is_running,
+        'last_run': dict(last) if last else None,
+        'interval_minutes': SYNC_INTERVAL_MINUTES,
+    })
+
+@app.route('/api/runs')
+def runs():
+    limit = request.args.get('limit', 20, type=int)
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sync_runs ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/sync', methods=['POST'])
+def trigger_sync():
+    threading.Thread(target=sync, daemon=True).start()
+    return jsonify({'status': 'started'})
 
 if __name__ == '__main__':
-    sync()  # run immediately on startup
+    init_db()
+    sync()
 
-    scheduler = BlockingScheduler(timezone='UTC')
+    scheduler = BackgroundScheduler(timezone='UTC')
     scheduler.add_job(sync, 'interval', minutes=SYNC_INTERVAL_MINUTES)
-    logger.info(f"Scheduler running — syncing every {SYNC_INTERVAL_MINUTES} min")
     scheduler.start()
+    logger.info(f"Scheduler started — syncing every {SYNC_INTERVAL_MINUTES} min")
+
+    app.run(host='0.0.0.0', port=PORT)
