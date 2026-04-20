@@ -8,7 +8,7 @@ import logging
 import os
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -120,7 +120,8 @@ def upload_bulk_feed(token, xml_data, feed_name):
 
 # --- Sync ---
 def sync():
-    now = datetime.utcnow()
+    eastern = timezone(timedelta(hours=-4))  # EDT (UTC-4)
+    now = datetime.now(eastern)
     feed_name = f"CWR-DMv2-{now.strftime('%m%d')}-{now.strftime('%I%p').lower()}.xml"
     logger.info(f"=== Starting CWR → Walmart sync | feed: {feed_name} ===")
     start = time.time()
