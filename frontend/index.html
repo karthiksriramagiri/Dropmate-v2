@@ -466,6 +466,11 @@
             <div class="value" style="font-size:15px" id="cwr-time">—</div>
             <div class="sub" id="cwr-time-full">Never</div>
           </div>
+          <div class="dist-stat" id="cwr-disc-stat" style="display:none">
+            <div class="label">Zeroed Out</div>
+            <div class="value" style="font-size:18px;color:var(--warning)" id="cwr-disc">—</div>
+            <div class="sub">discontinued</div>
+          </div>
         </div>
       </div>
       <div class="progress-area" id="progress-cwr">
@@ -591,6 +596,7 @@
           <th>Source</th>
           <th>Status</th>
           <th>SKUs Sent</th>
+          <th>Zeroed Out</th>
           <th>Feed ID</th>
           <th>Duration</th>
         </tr>
@@ -784,6 +790,18 @@
     totalEl.textContent = last.total?.toLocaleString() ?? '—';
     timeEl.textContent  = timeAgo(last.completed_at);
     fullEl.textContent  = fmtTime(last.completed_at);
+
+    // CWR-only: show discontinued count
+    if (src === 'cwr') {
+      const discStat = document.getElementById('cwr-disc-stat');
+      const discEl   = document.getElementById('cwr-disc');
+      if (last.disc_count != null && last.disc_count > 0) {
+        discEl.textContent  = last.disc_count.toLocaleString();
+        discStat.style.display = '';
+      } else {
+        discStat.style.display = 'none';
+      }
+    }
   }
 
   async function loadRuns() {
@@ -801,6 +819,9 @@
 
       tbody.innerHTML = runs.map(r => {
         const cls = srcClass[r.source] || '';
+        const discCell = r.source === 'cwr' && r.disc_count > 0
+          ? `<span style="color:var(--warning);font-weight:600">${r.disc_count.toLocaleString()}</span>`
+          : '—';
         return `
           <tr>
             <td>${fmtTime(r.started_at)}</td>
@@ -812,6 +833,7 @@
             </td>
             <td><span class="pill ${r.status}">${r.status}</span></td>
             <td>${r.total?.toLocaleString() ?? '—'}</td>
+            <td>${discCell}</td>
             <td class="feed-id">${r.feed_id ? r.feed_id.slice(0,22) + '…' : '—'}</td>
             <td>${r.duration_s != null ? r.duration_s + 's' : '—'}</td>
           </tr>`;

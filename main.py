@@ -75,10 +75,16 @@ def init_db():
                 completed_at TEXT,
                 status       TEXT DEFAULT 'running',
                 total        INTEGER DEFAULT 0,
+                disc_count   INTEGER DEFAULT 0,
                 feed_id      TEXT,
                 duration_s   REAL
             );
         """)
+        # Add disc_count to existing DBs that predate this column
+        try:
+            conn.execute("ALTER TABLE sync_runs ADD COLUMN disc_count INTEGER DEFAULT 0")
+        except Exception:
+            pass
 
 # --- CWR ---
 def get_last_cwr_sync_timestamp():
@@ -122,13 +128,15 @@ def fetch_cwr_inventory():
                 disc_count += 1
         if disc_count:
             logger.info(f"[cwr] Zeroing out {disc_count} discontinued SKUs")
-            set_progress('cwr', step=f'Found {disc_count} discontinued SKUs — zeroing out…', pct=18)
+            set_progress('cwr', step=f'Found {disc_count} discontinued SKUs — zeroing out…', pct=18, disc_count=disc_count)
         else:
             logger.info(f"[cwr] No newly discontinued SKUs since last sync")
+            set_progress('cwr', disc_count=0)
     except Exception as e:
         logger.warning(f"[cwr] Could not fetch discontinued SKUs: {e}")
+        set_progress('cwr', disc_count=0)
 
-    return list(records.values())
+    return list(records.values()), _progress.get('cwr', {}).get('disc_count', 0)
 
 # --- Keystone ---
 class ImplicitFTPS(ftplib.FTP_TLS):
@@ -269,8 +277,14 @@ def run_sync(source, fetch_fn, feed_prefix):
         run_id = cur.lastrowid
 
     # Fetch
+    disc_count = 0
     try:
-        records = fetch_fn()
+        result = fetch_fn()
+        # CWR returns (records, disc_count); others return just records
+        if isinstance(result, tuple):
+            records, disc_count = result
+        else:
+            records = result
         logger.info(f"[{source}] Fetched {len(records)} SKUs")
         set_progress(source, step='Fetched — authenticating with Walmart…', pct=30, total=len(records))
     except Exception as e:
@@ -334,8 +348,8 @@ def run_sync(source, fetch_fn, feed_prefix):
     with get_db() as conn:
         conn.execute("""
             UPDATE sync_runs SET status=?, completed_at=datetime('now'),
-            total=?, feed_id=?, duration_s=? WHERE id=?
-        """, (status, len(records), feed_ids[0] if feed_ids else '', duration, run_id))
+            total=?, disc_count=?, feed_id=?, duration_s=? WHERE id=?
+        """, (status, len(records), disc_count, feed_ids[0] if feed_ids else '', duration, run_id))
 
     set_progress(source, step='Done ✓', pct=100, chunks_done=len(chunks))
     logger.info(f"[{source}] Done in {duration}s — {len(chunks)-failed}/{len(chunks)} chunks OK")
