@@ -146,6 +146,16 @@
       <div class="value green" id="stat-ks-total">—</div>
       <div class="sub">last feed</div>
     </div>
+    <div class="stat-card">
+      <div class="label">TWH Last Sync</div>
+      <div class="value blue" id="stat-twh-time">—</div>
+      <div class="sub" id="stat-twh-sub">Never</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">TWH SKUs Sent</div>
+      <div class="value green" id="stat-twh-total">—</div>
+      <div class="sub">last feed</div>
+    </div>
   </div>
 
   <div class="section">
@@ -154,6 +164,7 @@
       <div style="display:flex;gap:8px">
         <button onclick="triggerSync('cwr')">Sync CWR</button>
         <button onclick="triggerSync('keystone')">Sync Keystone</button>
+        <button onclick="triggerSync('twh')">Sync TWH</button>
         <button onclick="triggerSync('all')" style="background:#6366f1">Sync All</button>
       </div>
     </div>
@@ -220,6 +231,12 @@
         document.getElementById('stat-ks-sub').textContent   = formatTime(ks.completed_at);
         document.getElementById('stat-ks-total').textContent = ks.total ?? '—';
       }
+      const twh = data.last_twh;
+      if (twh) {
+        document.getElementById('stat-twh-time').textContent  = timeAgo(twh.completed_at);
+        document.getElementById('stat-twh-sub').textContent   = formatTime(twh.completed_at);
+        document.getElementById('stat-twh-total').textContent = twh.total ?? '—';
+      }
     } catch (e) {
       console.error('Status fetch failed:', e);
     }
@@ -236,7 +253,7 @@
         return;
       }
 
-      const srcLabel = { cwr: 'CWR', keystone: 'Keystone' };
+      const srcLabel = { cwr: 'CWR', keystone: 'Keystone', twh: 'TWH' };
       tbody.innerHTML = runs.map(r => `
         <tr>
           <td>${formatTime(r.started_at)}</td>

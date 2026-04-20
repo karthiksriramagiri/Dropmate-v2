@@ -29,6 +29,11 @@ KS_FTP_USER = 'S173312'
 KS_FTP_PASS = 'sia33yct'
 KS_FTP_FILE = 'Inventory.csv'
 
+TWH_FTP_HOST = 'ftp.twhouse.com'
+TWH_FTP_USER = 'HASHSHOPINC'
+TWH_FTP_PASS = 'v4E6EsGNvIBKpKu'
+TWH_FTP_FILE = 'invenfeed_6930.csv'
+
 WM_CLIENT_ID     = os.getenv('WM_CLIENT_ID', '47f10f25-5746-41a6-be4a-db812f949894')
 WM_CLIENT_SECRET = os.getenv('WM_CLIENT_SECRET', 'C11fEdT35CMZfGxND0q54-LgDsjKXsHVpQojyeYcGE0ulVWiqdTsZ-hvneSJpInP3cOWwmq_-8aKsigRUwDNRQ')
 WM_BASE_URL      = 'https://marketplace.walmartapis.com'
@@ -108,6 +113,30 @@ def fetch_keystone_inventory():
         except ValueError:
             qty = 0
         records.append({'sku': sku, 'qty': qty})
+    return records
+
+# --- TWH ---
+def fetch_twh_inventory():
+    ftp = ftplib.FTP()
+    ftp.connect(TWH_FTP_HOST, 21, timeout=30)
+    ftp.login(TWH_FTP_USER, TWH_FTP_PASS)
+    ftp.set_pasv(True)
+    buf = io.BytesIO()
+    ftp.retrbinary(f'RETR {TWH_FTP_FILE}', buf.write)
+    ftp.quit()
+    content = buf.getvalue().decode('utf-8', errors='replace')
+    reader = csv.DictReader(io.StringIO(content))
+    records = []
+    for row in reader:
+        sku = str(row.get('itemcode') or '').strip()
+        qty_raw = str(row.get('totalQty') or '0').strip()
+        if not sku:
+            continue
+        try:
+            qty = int(float(qty_raw))
+        except ValueError:
+            qty = 0
+        records.append({'sku': f'TWH-{sku}', 'qty': qty})  # prefix for Walmart
     return records
 
 # --- Walmart ---
@@ -231,6 +260,7 @@ def run_sync(source, fetch_fn, feed_prefix):
 def sync_all():
     run_sync('cwr',      fetch_cwr_inventory,      'CWR-DMv2')
     run_sync('keystone', fetch_keystone_inventory,  'KS-DMv2')
+    run_sync('twh',      fetch_twh_inventory,       'TWH-DMv2')
 
 # --- Flask ---
 app = Flask(__name__)
@@ -249,13 +279,17 @@ def status():
         last_ks = conn.execute(
             "SELECT * FROM sync_runs WHERE source='keystone' AND status!='running' ORDER BY id DESC LIMIT 1"
         ).fetchone()
+        last_twh = conn.execute(
+            "SELECT * FROM sync_runs WHERE source='twh' AND status!='running' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
         is_running = conn.execute(
             "SELECT COUNT(*) as c FROM sync_runs WHERE status='running'"
         ).fetchone()['c'] > 0
     return jsonify({
-        'is_running': is_running,
-        'last_cwr':      dict(last_cwr) if last_cwr else None,
-        'last_keystone': dict(last_ks)  if last_ks  else None,
+        'is_running':    is_running,
+        'last_cwr':      dict(last_cwr)  if last_cwr  else None,
+        'last_keystone': dict(last_ks)   if last_ks   else None,
+        'last_twh':      dict(last_twh)  if last_twh  else None,
     })
 
 @app.route('/api/runs')
@@ -280,6 +314,8 @@ def trigger_sync():
         threading.Thread(target=run_sync, args=('cwr', fetch_cwr_inventory, 'CWR-DMv2'), daemon=True).start()
     elif source == 'keystone':
         threading.Thread(target=run_sync, args=('keystone', fetch_keystone_inventory, 'KS-DMv2'), daemon=True).start()
+    elif source == 'twh':
+        threading.Thread(target=run_sync, args=('twh', fetch_twh_inventory, 'TWH-DMv2'), daemon=True).start()
     else:
         threading.Thread(target=sync_all, daemon=True).start()
     return jsonify({'status': 'started', 'source': source})
