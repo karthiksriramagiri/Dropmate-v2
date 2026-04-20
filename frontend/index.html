@@ -608,6 +608,7 @@
   const API = 'https://dropmate-v2-production.up.railway.app';
   let activeFilter = 'all';
   let progressInterval = null;
+  let progressEverSeen = new Set(); // tracks which sources have shown progress this session
 
   const srcLabel = { cwr: 'CWR', keystone: 'Keystone', twh: 'TWH' };
   const srcClass = { cwr: 'cwr', keystone: 'ks', twh: 'twh' };
@@ -690,12 +691,17 @@
       const sources = ['cwr', 'keystone', 'twh'];
       let anyActive = false;
 
+      let finishedSources = [];
       sources.forEach(src => {
         if (data[src]) {
           showProgress(src, data[src]);
+          progressEverSeen.add(src);
           anyActive = true;
-        } else {
+        } else if (progressEverSeen.has(src)) {
+          // Only hide if we actually saw it running — prevents race on fresh trigger
           hideProgress(src);
+          progressEverSeen.delete(src);
+          finishedSources.push(src);
         }
       });
 
@@ -705,7 +711,7 @@
       if (anyActive) {
         dot.className = 'status-dot syncing';
         label.textContent = 'Syncing…';
-      } else {
+      } else if (finishedSources.length > 0) {
         dot.className = 'status-dot';
         label.textContent = 'Live';
         // Reload status/runs when sync finishes
@@ -827,13 +833,14 @@
     btn.textContent = 'Starting…';
 
     try {
-      await fetch(`${API}/api/sync`, {
+      const res = await fetch(`${API}/api/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source })
       });
-      // Start polling progress immediately
-      startProgressPolling();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Wait 1.5s for thread to start before first progress poll
+      setTimeout(startProgressPolling, 1500);
     } catch(e) {
       console.error(e);
       btn.disabled    = false;
@@ -841,13 +848,15 @@
       return;
     }
 
-    // Re-enable Sync All button after a delay (individual source buttons re-enabled by hideProgress)
-    if (source === 'all') {
-      setTimeout(() => {
-        btn.disabled    = false;
-        btn.textContent = lblMap[source];
-      }, 10000);
-    }
+    // Safety: always re-enable buttons after 90s in case progress never fires
+    const srcList = source === 'all' ? ['cwr', 'keystone', 'twh'] : [source];
+    setTimeout(() => {
+      srcList.forEach(s => {
+        const b = document.getElementById(s === 'keystone' ? 'btn-ks' : `btn-${s}`);
+        if (b && b.disabled) { b.disabled = false; b.textContent = lblMap[s] || lblMap[source]; }
+      });
+      if (source === 'all') { btn.disabled = false; btn.textContent = lblMap.all; }
+    }, 90000);
   }
 
   function refresh() {
