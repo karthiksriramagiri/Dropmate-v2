@@ -168,10 +168,16 @@ def upload_bulk_feed(token, xml_data, feed_name):
     return resp
 
 # --- Sync runners ---
+CHUNK_SIZE = 25000  # SKUs per feed upload
+
+def chunked(lst, size):
+    for i in range(0, len(lst), size):
+        yield lst[i:i + size]
+
 def run_sync(source, fetch_fn, feed_prefix):
     now = datetime.now(EASTERN)
-    feed_name = f"{feed_prefix}-{now.strftime('%m%d')}-{now.strftime('%I%p').lower()}.xml"
-    logger.info(f"=== {source.upper()} sync starting | {feed_name} ===")
+    ts = f"{now.strftime('%m%d')}-{now.strftime('%I%p').lower()}"
+    logger.info(f"=== {source.upper()} sync starting | {feed_prefix}-{ts} ===")
     start = time.time()
 
     with get_db() as conn:
@@ -195,26 +201,32 @@ def run_sync(source, fetch_fn, feed_prefix):
             conn.execute("UPDATE sync_runs SET status='error', completed_at=datetime('now') WHERE id=?", (run_id,))
         return
 
-    try:
-        xml_data = build_inventory_xml(records)
-        resp = upload_bulk_feed(token, xml_data, feed_name)
-        resp.raise_for_status()
-        feed_id = resp.json().get('feedId', '')
-        logger.info(f"[{source}] Feed submitted — feedId: {feed_id} | SKUs: {len(records)}")
-    except Exception as e:
-        logger.error(f"[{source}] Upload failed: {e}")
-        with get_db() as conn:
-            conn.execute("UPDATE sync_runs SET status='error', completed_at=datetime('now') WHERE id=?", (run_id,))
-        return
+    chunks = list(chunked(records, CHUNK_SIZE))
+    feed_ids = []
+    failed = 0
+    for i, chunk in enumerate(chunks, 1):
+        feed_name = f"{feed_prefix}-{ts}-p{i}.xml"
+        try:
+            xml_data = build_inventory_xml(chunk)
+            resp = upload_bulk_feed(token, xml_data, feed_name)
+            resp.raise_for_status()
+            feed_id = resp.json().get('feedId', '')
+            feed_ids.append(feed_id)
+            logger.info(f"[{source}] Chunk {i}/{len(chunks)} submitted — feedId: {feed_id} | SKUs: {len(chunk)}")
+        except Exception as e:
+            logger.error(f"[{source}] Chunk {i}/{len(chunks)} failed: {e}")
+            failed += 1
+        time.sleep(1)  # brief pause between chunks
 
+    status = 'error' if failed == len(chunks) else 'success'
     duration = round(time.time() - start, 1)
     with get_db() as conn:
         conn.execute("""
-            UPDATE sync_runs SET status='success', completed_at=datetime('now'),
+            UPDATE sync_runs SET status=?, completed_at=datetime('now'),
             total=?, feed_id=?, duration_s=? WHERE id=?
-        """, (len(records), feed_id, duration, run_id))
+        """, (status, len(records), feed_ids[0] if feed_ids else '', duration, run_id))
 
-    logger.info(f"[{source}] Done in {duration}s")
+    logger.info(f"[{source}] Done in {duration}s — {len(chunks) - failed}/{len(chunks)} chunks OK")
 
 def sync_all():
     run_sync('cwr',      fetch_cwr_inventory,      'CWR-DMv2')
