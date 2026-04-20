@@ -466,7 +466,7 @@
             <div class="value" style="font-size:15px" id="cwr-time">—</div>
             <div class="sub" id="cwr-time-full">Never</div>
           </div>
-          <div class="dist-stat" id="cwr-disc-stat" style="display:none">
+          <div class="dist-stat" id="cwr-disc-stat">
             <div class="label">Zeroed Out</div>
             <div class="value" style="font-size:18px;color:var(--warning)" id="cwr-disc">—</div>
             <div class="sub">discontinued</div>
@@ -795,12 +795,8 @@
     if (src === 'cwr') {
       const discStat = document.getElementById('cwr-disc-stat');
       const discEl   = document.getElementById('cwr-disc');
-      if (last.disc_count != null && last.disc_count > 0) {
-        discEl.textContent  = last.disc_count.toLocaleString();
-        discStat.style.display = '';
-      } else {
-        discStat.style.display = 'none';
-      }
+      discEl.textContent     = last.disc_count != null ? last.disc_count.toLocaleString() : '0';
+      discStat.style.display = '';
     }
   }
 
@@ -819,8 +815,8 @@
 
       tbody.innerHTML = runs.map(r => {
         const cls = srcClass[r.source] || '';
-        const discCell = r.source === 'cwr' && r.disc_count > 0
-          ? `<span style="color:var(--warning);font-weight:600">${r.disc_count.toLocaleString()}</span>`
+        const discCell = r.source === 'cwr'
+          ? `<span style="color:${r.disc_count > 0 ? 'var(--warning)' : 'var(--muted)'};font-weight:${r.disc_count > 0 ? '600' : '400'}">${(r.disc_count ?? 0).toLocaleString()}</span>`
           : '—';
         return `
           <tr>
