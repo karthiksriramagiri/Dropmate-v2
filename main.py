@@ -61,7 +61,7 @@ def fetch_cwr_inventory():
         'ohtime':  0,
     }, timeout=120)
     resp.raise_for_status()
-    return list(csv.DictReader(io.StringIO(resp.text)))
+    return list(csv.DictReader(io.StringIO(resp.text), fieldnames=['sku', 'qty']))
 
 # --- Walmart ---
 def get_walmart_token():
