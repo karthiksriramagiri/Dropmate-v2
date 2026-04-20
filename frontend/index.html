@@ -5,167 +5,491 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DropMate v2</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f0f0f;
-      color: #e8e8e8;
-      min-height: 100vh;
+    :root {
+      --bg:       #080808;
+      --surface:  #111111;
+      --border:   #1c1c1c;
+      --border2:  #242424;
+      --text:     #e2e2e2;
+      --muted:    #555;
+      --muted2:   #333;
+      --cwr:      #3b82f6;
+      --ks:       #a855f7;
+      --twh:      #10b981;
+      --success:  #22c55e;
+      --error:    #ef4444;
+      --warning:  #f59e0b;
+      --radius:   12px;
     }
 
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
     header {
-      padding: 24px 32px;
-      border-bottom: 1px solid #222;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(8,8,8,0.92);
+      backdrop-filter: blur(12px);
+      z-index: 10;
     }
 
-    header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
-    header h1 span { color: #3b82f6; }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #3b82f6, #a855f7);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .logo h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.3px; }
+    .logo h1 span { color: #3b82f6; }
 
-    .badge {
-      font-size: 11px;
-      padding: 3px 10px;
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+      animation: pulse 2s infinite;
+    }
+    .status-dot.syncing { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+    .status-dot.error   { background: var(--error);   box-shadow: 0 0 8px var(--error); animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    .status-label { font-size: 12px; color: var(--muted); }
+
+    .next-sync {
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 5px 12px;
       border-radius: 20px;
-      font-weight: 500;
     }
-    .badge.live   { background: #052e16; color: #4ade80; border: 1px solid #166534; }
-    .badge.syncing { background: #172554; color: #60a5fa; border: 1px solid #1e40af; }
-    .badge.error  { background: #2d0b0b; color: #f87171; border: 1px solid #7f1d1d; }
+    .next-sync span { color: var(--text); font-weight: 500; }
 
-    main { max-width: 960px; margin: 0 auto; padding: 32px; }
+    /* ── Main ── */
+    main { max-width: 1100px; margin: 0 auto; padding: 32px; }
 
-    .stats {
+    /* ── Section title ── */
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Distributor Cards ── */
+    .distributors {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 16px;
       margin-bottom: 32px;
     }
 
-    .stat-card {
-      background: #161616;
-      border: 1px solid #222;
-      border-radius: 10px;
-      padding: 20px;
+    .dist-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: border-color 0.2s;
     }
-    .stat-card .label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-    .stat-card .value { font-size: 28px; font-weight: 700; }
-    .stat-card .sub   { font-size: 12px; color: #555; margin-top: 4px; }
+    .dist-card:hover { border-color: var(--border2); }
 
-    .value.green { color: #4ade80; }
-    .value.red   { color: #f87171; }
-    .value.blue  { color: #60a5fa; }
+    .dist-card-top {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--border);
+    }
 
-    .section { background: #161616; border: 1px solid #222; border-radius: 10px; overflow: hidden; }
-    .section-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #222;
+    .dist-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      margin-bottom: 16px;
     }
-    .section-header h2 { font-size: 14px; font-weight: 600; }
 
-    button {
-      background: #3b82f6;
-      color: #fff;
+    .dist-name {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dist-badge {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+    }
+    .dist-badge.cwr { background: var(--cwr); box-shadow: 0 0 8px var(--cwr); }
+    .dist-badge.ks  { background: var(--ks);  box-shadow: 0 0 8px var(--ks); }
+    .dist-badge.twh { background: var(--twh); box-shadow: 0 0 8px var(--twh); }
+
+    .dist-name h2 { font-size: 15px; font-weight: 600; }
+
+    .pill {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .pill.success { background: rgba(34,197,94,0.12);  color: var(--success); }
+    .pill.error   { background: rgba(239,68,68,0.12);  color: var(--error); }
+    .pill.running { background: rgba(245,158,11,0.12); color: var(--warning); }
+    .pill.idle    { background: rgba(85,85,85,0.2);    color: var(--muted); }
+
+    .dist-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .dist-stat .label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .dist-stat .value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .dist-stat .sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .value.cwr { color: var(--cwr); }
+    .value.ks  { color: var(--ks); }
+    .value.twh { color: var(--twh); }
+
+    .dist-card-bottom { padding: 14px 20px; }
+
+    .dist-schedule {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .dist-schedule span { color: #777; }
+
+    .sync-btn {
+      width: 100%;
+      padding: 9px;
       border: none;
-      padding: 8px 16px;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: opacity 0.15s, transform 0.1s;
+      letter-spacing: -0.1px;
     }
-    button:hover { background: #2563eb; }
-    button:disabled { background: #1e3a5f; color: #4b6fa5; cursor: not-allowed; }
+    .sync-btn:hover   { opacity: 0.85; }
+    .sync-btn:active  { transform: scale(0.98); }
+    .sync-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .sync-btn.cwr { background: rgba(59,130,246,0.15); color: var(--cwr); border: 1px solid rgba(59,130,246,0.3); }
+    .sync-btn.ks  { background: rgba(168,85,247,0.15); color: var(--ks);  border: 1px solid rgba(168,85,247,0.3); }
+    .sync-btn.twh { background: rgba(16,185,129,0.15); color: var(--twh); border: 1px solid rgba(16,185,129,0.3); }
+
+    /* ── Sync All ── */
+    .sync-all-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      padding: 14px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    .sync-all-left { font-size: 13px; color: var(--muted); }
+    .sync-all-left strong { color: var(--text); }
+
+    .sync-all-btn {
+      padding: 9px 20px;
+      background: linear-gradient(135deg, #3b82f6, #a855f7);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      letter-spacing: -0.2px;
+    }
+    .sync-all-btn:hover   { opacity: 0.88; }
+    .sync-all-btn:active  { transform: scale(0.98); }
+    .sync-all-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── History Table ── */
+    .history-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .history-header h2 { font-size: 14px; font-weight: 600; }
+
+    .filter-tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--bg);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .filter-tab {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      transition: all 0.15s;
+    }
+    .filter-tab.active {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border2);
+    }
+    .filter-tab:hover:not(.active) { color: var(--text); }
 
     table { width: 100%; border-collapse: collapse; }
+
     th {
       text-align: left;
-      font-size: 11px;
-      color: #555;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
       padding: 12px 20px;
-      border-bottom: 1px solid #1f1f1f;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
     }
-    td { padding: 13px 20px; font-size: 13px; border-bottom: 1px solid #1a1a1a; }
+
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #1a1a1a; }
+    tbody tr { transition: background 0.1s; }
+    tbody tr:hover td { background: rgba(255,255,255,0.02); }
 
-    .pill {
-      display: inline-block;
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 4px;
+    .source-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
       font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 20px;
     }
-    .pill.success { background: #052e16; color: #4ade80; }
-    .pill.error   { background: #2d0b0b; color: #f87171; }
-    .pill.running { background: #172554; color: #60a5fa; }
+    .source-tag.cwr { background: rgba(59,130,246,0.1);  color: var(--cwr); }
+    .source-tag.ks  { background: rgba(168,85,247,0.1);  color: var(--ks); }
+    .source-tag.twh { background: rgba(16,185,129,0.1);  color: var(--twh); }
 
-    .empty { text-align: center; padding: 40px; color: #444; font-size: 13px; }
+    .source-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .cwr .source-dot { background: var(--cwr); }
+    .ks  .source-dot { background: var(--ks); }
+    .twh .source-dot { background: var(--twh); }
 
-    footer { text-align: center; color: #333; font-size: 11px; padding: 32px; }
+    .feed-id {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
 
-    @media (max-width: 640px) {
-      .stats { grid-template-columns: repeat(2, 1fr); }
+    .empty-row td {
+      text-align: center;
+      padding: 48px;
+      color: var(--muted);
+    }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      color: var(--muted2);
+      font-size: 11px;
+      padding: 32px;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .distributors { grid-template-columns: 1fr; }
       main { padding: 16px; }
+      header { padding: 16px; }
     }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>Drop<span>Mate</span> v2</h1>
-  <span class="badge live" id="header-badge">Live</span>
+  <div class="logo">
+    <div class="logo-icon">📦</div>
+    <h1>Drop<span>Mate</span> v2</h1>
+  </div>
+  <div class="header-right">
+    <div class="status-dot" id="status-dot"></div>
+    <span class="status-label" id="status-label">Live</span>
+    <div class="next-sync">Next sync <span id="next-sync-time">—</span></div>
+  </div>
 </header>
 
 <main>
-  <div class="stats">
-    <div class="stat-card">
-      <div class="label">CWR Last Sync</div>
-      <div class="value blue" id="stat-cwr-time">—</div>
-      <div class="sub" id="stat-cwr-sub">Never</div>
+
+  <!-- Distributor Cards -->
+  <div class="section-title">Distributors</div>
+  <div class="distributors">
+
+    <!-- CWR -->
+    <div class="dist-card">
+      <div class="dist-card-top">
+        <div class="dist-header">
+          <div class="dist-name">
+            <div class="dist-badge cwr"></div>
+            <h2>CWR</h2>
+          </div>
+          <span class="pill idle" id="cwr-status">—</span>
+        </div>
+        <div class="dist-stats">
+          <div class="dist-stat">
+            <div class="label">SKUs Sent</div>
+            <div class="value cwr" id="cwr-total">—</div>
+            <div class="sub">last feed</div>
+          </div>
+          <div class="dist-stat">
+            <div class="label">Last Sync</div>
+            <div class="value" style="font-size:15px" id="cwr-time">—</div>
+            <div class="sub" id="cwr-time-full">Never</div>
+          </div>
+        </div>
+      </div>
+      <div class="dist-card-bottom">
+        <div class="dist-schedule">Schedule: <span>12am · 6am · 12pm · 6pm</span></div>
+        <button class="sync-btn cwr" onclick="triggerSync('cwr')" id="btn-cwr">Sync CWR Now</button>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="label">CWR SKUs Sent</div>
-      <div class="value green" id="stat-cwr-total">—</div>
-      <div class="sub">last feed</div>
+
+    <!-- Keystone -->
+    <div class="dist-card">
+      <div class="dist-card-top">
+        <div class="dist-header">
+          <div class="dist-name">
+            <div class="dist-badge ks"></div>
+            <h2>Keystone</h2>
+          </div>
+          <span class="pill idle" id="ks-status">—</span>
+        </div>
+        <div class="dist-stats">
+          <div class="dist-stat">
+            <div class="label">SKUs Sent</div>
+            <div class="value ks" id="ks-total">—</div>
+            <div class="sub">last feed</div>
+          </div>
+          <div class="dist-stat">
+            <div class="label">Last Sync</div>
+            <div class="value" style="font-size:15px" id="ks-time">—</div>
+            <div class="sub" id="ks-time-full">Never</div>
+          </div>
+        </div>
+      </div>
+      <div class="dist-card-bottom">
+        <div class="dist-schedule">Schedule: <span>12am · 6am · 12pm · 6pm</span></div>
+        <button class="sync-btn ks" onclick="triggerSync('keystone')" id="btn-ks">Sync Keystone Now</button>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="label">Keystone Last Sync</div>
-      <div class="value blue" id="stat-ks-time">—</div>
-      <div class="sub" id="stat-ks-sub">Never</div>
+
+    <!-- TWH -->
+    <div class="dist-card">
+      <div class="dist-card-top">
+        <div class="dist-header">
+          <div class="dist-name">
+            <div class="dist-badge twh"></div>
+            <h2>TWH</h2>
+          </div>
+          <span class="pill idle" id="twh-status">—</span>
+        </div>
+        <div class="dist-stats">
+          <div class="dist-stat">
+            <div class="label">SKUs Sent</div>
+            <div class="value twh" id="twh-total">—</div>
+            <div class="sub">last feed</div>
+          </div>
+          <div class="dist-stat">
+            <div class="label">Last Sync</div>
+            <div class="value" style="font-size:15px" id="twh-time">—</div>
+            <div class="sub" id="twh-time-full">Never</div>
+          </div>
+        </div>
+      </div>
+      <div class="dist-card-bottom">
+        <div class="dist-schedule">Schedule: <span>3am · 9am · 3pm · 9pm</span></div>
+        <button class="sync-btn twh" onclick="triggerSync('twh')" id="btn-twh">Sync TWH Now</button>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="label">Keystone SKUs Sent</div>
-      <div class="value green" id="stat-ks-total">—</div>
-      <div class="sub">last feed</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">TWH Last Sync</div>
-      <div class="value blue" id="stat-twh-time">—</div>
-      <div class="sub" id="stat-twh-sub">Never</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">TWH SKUs Sent</div>
-      <div class="value green" id="stat-twh-total">—</div>
-      <div class="sub">last feed</div>
-    </div>
+
   </div>
 
-  <div class="section">
-    <div class="section-header">
-      <h2>Sync History</h2>
-      <div style="display:flex;gap:8px">
-        <button onclick="triggerSync('cwr')">Sync CWR</button>
-        <button onclick="triggerSync('keystone')">Sync Keystone</button>
-        <button onclick="triggerSync('twh')">Sync TWH</button>
-        <button onclick="triggerSync('all')" style="background:#6366f1">Sync All</button>
+  <!-- Sync All -->
+  <div class="sync-all-row">
+    <div class="sync-all-left">
+      <strong>Sync All Distributors</strong> — pushes CWR, Keystone, and TWH to Walmart immediately
+    </div>
+    <button class="sync-all-btn" onclick="triggerSync('all')" id="btn-all">Sync All Now</button>
+  </div>
+
+  <!-- History -->
+  <div class="section-title">Sync History</div>
+  <div class="history-card">
+    <div class="history-header">
+      <h2>Recent Runs</h2>
+      <div class="filter-tabs">
+        <button class="filter-tab active" onclick="setFilter('all', this)">All</button>
+        <button class="filter-tab" onclick="setFilter('cwr', this)">CWR</button>
+        <button class="filter-tab" onclick="setFilter('keystone', this)">Keystone</button>
+        <button class="filter-tab" onclick="setFilter('twh', this)">TWH</button>
       </div>
     </div>
     <table>
@@ -180,96 +504,140 @@
         </tr>
       </thead>
       <tbody id="runs-body">
-        <tr><td colspan="6" class="empty">Loading…</td></tr>
+        <tr class="empty-row"><td colspan="6">Loading…</td></tr>
       </tbody>
     </table>
   </div>
+
 </main>
 
-<footer>DropMate v2 — CWR + Keystone → Walmart · refreshes every 30s</footer>
+<footer>DropMate v2 &nbsp;·&nbsp; CWR + Keystone + TWH → Walmart &nbsp;·&nbsp; auto-refreshes every 30s</footer>
 
 <script>
   const API = 'https://dropmate-v2-production.up.railway.app';
+  let activeFilter = 'all';
 
-  function timeAgo(dateStr) {
-    if (!dateStr) return '—';
-    const diff = Math.floor((Date.now() - new Date(dateStr + 'Z')) / 1000);
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
-    return `${Math.floor(diff/86400)}d ago`;
+  const srcLabel = { cwr: 'CWR', keystone: 'Keystone', twh: 'TWH' };
+  const srcClass = { cwr: 'cwr', keystone: 'ks', twh: 'twh' };
+
+  function timeAgo(d) {
+    if (!d) return '—';
+    const s = Math.floor((Date.now() - new Date(d + 'Z')) / 1000);
+    if (s < 60)   return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    if (s < 86400)return `${Math.floor(s/3600)}h ago`;
+    return `${Math.floor(s/86400)}d ago`;
   }
 
-  function formatTime(dateStr) {
-    if (!dateStr) return '—';
-    return new Date(dateStr + 'Z').toLocaleString();
+  function fmtTime(d) {
+    if (!d) return 'Never';
+    return new Date(d + 'Z').toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+
+  function nextOccurrence(hours) {
+    const now = new Date();
+    const et  = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const h   = et.getHours(), m = et.getMinutes();
+    for (const hr of hours.sort((a,b)=>a-b)) {
+      if (hr > h || (hr === h && m < 55)) {
+        const diff = (hr - h) * 60 - m;
+        return diff < 60 ? `${diff}m` : `${Math.floor(diff/60)}h ${diff%60}m`;
+      }
+    }
+    const diff = (24 - h + hours[0]) * 60 - m;
+    return `${Math.floor(diff/60)}h ${diff%60}m`;
   }
 
   async function loadStatus() {
     try {
-      const res = await fetch(`${API}/api/status`);
+      const res  = await fetch(`${API}/api/status`);
       const data = await res.json();
-      const cwr = data.last_cwr;
-      const ks  = data.last_keystone;
 
-      const badge = document.getElementById('header-badge');
+      const dot   = document.getElementById('status-dot');
+      const label = document.getElementById('status-label');
       if (data.is_running) {
-        badge.textContent = 'Syncing…'; badge.className = 'badge syncing';
-      } else if (cwr?.status === 'error' || ks?.status === 'error') {
-        badge.textContent = 'Error'; badge.className = 'badge error';
+        dot.className = 'status-dot syncing';
+        label.textContent = 'Syncing…';
       } else {
-        badge.textContent = 'Live'; badge.className = 'badge live';
+        dot.className = 'status-dot';
+        label.textContent = 'Live';
       }
 
-      if (cwr) {
-        document.getElementById('stat-cwr-time').textContent  = timeAgo(cwr.completed_at);
-        document.getElementById('stat-cwr-sub').textContent   = formatTime(cwr.completed_at);
-        document.getElementById('stat-cwr-total').textContent = cwr.total ?? '—';
-      }
-      if (ks) {
-        document.getElementById('stat-ks-time').textContent  = timeAgo(ks.completed_at);
-        document.getElementById('stat-ks-sub').textContent   = formatTime(ks.completed_at);
-        document.getElementById('stat-ks-total').textContent = ks.total ?? '—';
-      }
-      const twh = data.last_twh;
-      if (twh) {
-        document.getElementById('stat-twh-time').textContent  = timeAgo(twh.completed_at);
-        document.getElementById('stat-twh-sub').textContent   = formatTime(twh.completed_at);
-        document.getElementById('stat-twh-total').textContent = twh.total ?? '—';
-      }
-    } catch (e) {
-      console.error('Status fetch failed:', e);
-    }
+      // next sync countdown (earliest of CWR/KS at 0,6,12,18 and TWH at 3,9,15,21)
+      const cwrNext = nextOccurrence([0,6,12,18]);
+      document.getElementById('next-sync-time').textContent = `in ${cwrNext}`;
+
+      fillDist('cwr',      data.last_cwr);
+      fillDist('keystone', data.last_keystone);
+      fillDist('twh',      data.last_twh);
+    } catch(e) { console.error(e); }
+  }
+
+  function fillDist(src, last) {
+    const cls = srcClass[src];
+    const statusEl = document.getElementById(`${cls}-status`);
+    const totalEl  = document.getElementById(`${cls}-total`);
+    const timeEl   = document.getElementById(`${cls}-time`);
+    const fullEl   = document.getElementById(`${cls}-time-full`);
+
+    if (!last) return;
+
+    statusEl.textContent = last.status;
+    statusEl.className   = `pill ${last.status}`;
+    totalEl.textContent  = last.total?.toLocaleString() ?? '—';
+    timeEl.textContent   = timeAgo(last.completed_at);
+    fullEl.textContent   = fmtTime(last.completed_at);
   }
 
   async function loadRuns() {
     try {
-      const res = await fetch(`${API}/api/runs?limit=30`);
-      const runs = await res.json();
+      const url = activeFilter === 'all'
+        ? `${API}/api/runs?limit=40`
+        : `${API}/api/runs?source=${activeFilter}&limit=40`;
+      const runs = await (await fetch(url)).json();
       const tbody = document.getElementById('runs-body');
 
       if (!runs.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">No syncs yet</td></tr>';
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No syncs yet</td></tr>';
         return;
       }
 
-      const srcLabel = { cwr: 'CWR', keystone: 'Keystone', twh: 'TWH' };
-      tbody.innerHTML = runs.map(r => `
-        <tr>
-          <td>${formatTime(r.started_at)}</td>
-          <td><span class="pill" style="background:#1e1e2e;color:#a78bfa;border:1px solid #4c1d95">${srcLabel[r.source] || r.source}</span></td>
-          <td><span class="pill ${r.status}">${r.status}</span></td>
-          <td>${r.total ?? '—'}</td>
-          <td style="font-size:11px;color:#555">${r.feed_id ? r.feed_id.slice(0, 18) + '…' : '—'}</td>
-          <td>${r.duration_s != null ? r.duration_s + 's' : '—'}</td>
-        </tr>
-      `).join('');
-    } catch (e) {
-      console.error('Runs fetch failed:', e);
-    }
+      tbody.innerHTML = runs.map(r => {
+        const cls = srcClass[r.source] || '';
+        return `
+          <tr>
+            <td>${fmtTime(r.started_at)}</td>
+            <td>
+              <span class="source-tag ${cls}">
+                <span class="source-dot"></span>
+                ${srcLabel[r.source] || r.source}
+              </span>
+            </td>
+            <td><span class="pill ${r.status}">${r.status}</span></td>
+            <td>${r.total?.toLocaleString() ?? '—'}</td>
+            <td class="feed-id">${r.feed_id ? r.feed_id.slice(0,22) + '…' : '—'}</td>
+            <td>${r.duration_s != null ? r.duration_s + 's' : '—'}</td>
+          </tr>`;
+      }).join('');
+    } catch(e) { console.error(e); }
   }
 
+  function setFilter(f, el) {
+    activeFilter = f;
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    loadRuns();
+  }
+
+  const btnMap = { cwr: 'btn-cwr', keystone: 'btn-ks', twh: 'btn-twh', all: 'btn-all' };
+  const lblMap = { cwr: 'Sync CWR Now', keystone: 'Sync Keystone Now', twh: 'Sync TWH Now', all: 'Sync All Now' };
+
   async function triggerSync(source) {
+    const btnId = btnMap[source];
+    const btn   = document.getElementById(btnId);
+    btn.disabled    = true;
+    btn.textContent = 'Syncing…';
+
     try {
       await fetch(`${API}/api/sync`, {
         method: 'POST',
@@ -277,15 +645,17 @@
         body: JSON.stringify({ source })
       });
       setTimeout(() => { loadStatus(); loadRuns(); }, 2000);
-    } catch (e) {
-      console.error('Trigger failed:', e);
-    }
+    } catch(e) { console.error(e); }
+
+    setTimeout(() => {
+      btn.disabled    = false;
+      btn.textContent = lblMap[source];
+    }, 8000);
   }
 
   function refresh() { loadStatus(); loadRuns(); }
   refresh();
   setInterval(refresh, 30000);
 </script>
-
 </body>
 </html>
