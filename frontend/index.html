@@ -949,7 +949,7 @@
     loadRuns();
     // Check if a sync is running and start polling if so
     fetch(`${API}/api/progress`).then(r => r.json()).then(data => {
-      const active = ['cwr','keystone','twh'].some(s => data[s]);
+      const active = ['cwr','keystone','twh','dandh'].some(s => data[s]);
       if (active) startProgressPolling();
       else stopProgressPolling();
     }).catch(() => {});
