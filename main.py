@@ -268,12 +268,13 @@ def run_sync(source, fetch_fn, feed_prefix):
 
     logger.info(f"[{source}] Done in {duration}s — {len(chunks) - failed}/{len(chunks)} chunks OK")
 
-def sync_all():
-    run_sync('cwr',      fetch_cwr_inventory,      'CWR-DMv2')
-    time.sleep(60)  # let Walmart breathe between distributors
-    run_sync('keystone', fetch_keystone_inventory,  'KS-DMv2')
-    time.sleep(60)
-    run_sync('twh',      fetch_twh_inventory,       'TWH-DMv2')
+def sync_cwr_keystone():
+    run_sync('cwr',      fetch_cwr_inventory,     'CWR-DMv2')
+    time.sleep(60)  # pause between distributors
+    run_sync('keystone', fetch_keystone_inventory, 'KS-DMv2')
+
+def sync_twh():
+    run_sync('twh', fetch_twh_inventory, 'TWH-DMv2')
 
 # --- Flask ---
 app = Flask(__name__)
@@ -328,18 +329,21 @@ def trigger_sync():
     elif source == 'keystone':
         threading.Thread(target=run_sync, args=('keystone', fetch_keystone_inventory, 'KS-DMv2'), daemon=True).start()
     elif source == 'twh':
-        threading.Thread(target=run_sync, args=('twh', fetch_twh_inventory, 'TWH-DMv2'), daemon=True).start()
+        threading.Thread(target=sync_twh, daemon=True).start()
     else:
-        threading.Thread(target=sync_all, daemon=True).start()
+        threading.Thread(target=sync_cwr_keystone, daemon=True).start()
+        threading.Thread(target=sync_twh, daemon=True).start()
     return jsonify({'status': 'started', 'source': source})
 
 if __name__ == '__main__':
     init_db()
-    sync_all()
+    sync_cwr_keystone()
+    sync_twh()
 
     scheduler = BackgroundScheduler(timezone='America/New_York')
-    scheduler.add_job(sync_all, 'cron', hour='0,6,12,18', minute=0)
+    scheduler.add_job(sync_cwr_keystone, 'cron', hour='0,6,12,18',  minute=0)
+    scheduler.add_job(sync_twh,          'cron', hour='3,9,15,21',  minute=0)
     scheduler.start()
-    logger.info("Scheduler started — syncing at 12am, 6am, 12pm, 6pm Eastern")
+    logger.info("Scheduler started — CWR/Keystone: 12am/6am/12pm/6pm | TWH: 3am/9am/3pm/9pm Eastern")
 
     app.run(host='0.0.0.0', port=PORT)
