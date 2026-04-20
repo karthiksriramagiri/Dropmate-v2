@@ -18,6 +18,7 @@
       --cwr:      #3b82f6;
       --ks:       #a855f7;
       --twh:      #10b981;
+      --dh:       #f97316;
       --success:  #22c55e;
       --error:    #ef4444;
       --warning:  #f59e0b;
@@ -108,7 +109,7 @@
     /* ── Distributor Cards ── */
     .distributors {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 16px;
       margin-bottom: 32px;
     }
@@ -124,6 +125,7 @@
     .dist-card.syncing-cwr { border-color: rgba(59,130,246,0.4); }
     .dist-card.syncing-ks  { border-color: rgba(168,85,247,0.4); }
     .dist-card.syncing-twh { border-color: rgba(16,185,129,0.4); }
+    .dist-card.syncing-dh  { border-color: rgba(249,115,22,0.4); }
 
     .dist-card-top {
       padding: 20px 20px 16px;
@@ -150,6 +152,7 @@
     .dist-badge.cwr { background: var(--cwr); box-shadow: 0 0 8px var(--cwr); }
     .dist-badge.ks  { background: var(--ks);  box-shadow: 0 0 8px var(--ks); }
     .dist-badge.twh { background: var(--twh); box-shadow: 0 0 8px var(--twh); }
+    .dist-badge.dh  { background: var(--dh);  box-shadow: 0 0 8px var(--dh); }
 
     .dist-name h2 { font-size: 15px; font-weight: 600; }
 
@@ -191,6 +194,7 @@
     .value.cwr { color: var(--cwr); }
     .value.ks  { color: var(--ks); }
     .value.twh { color: var(--twh); }
+    .value.dh  { color: var(--dh); }
 
     /* ── Progress bar ── */
     .progress-area {
@@ -237,6 +241,10 @@
       background: linear-gradient(90deg, var(--twh), #34d399, var(--twh));
       animation: shimmer 2s linear infinite;
     }
+    .progress-fill.dh {
+      background: linear-gradient(90deg, var(--dh), #fb923c, var(--dh));
+      animation: shimmer 2s linear infinite;
+    }
 
     .progress-meta {
       display: flex;
@@ -273,6 +281,7 @@
     .sync-btn.cwr { background: rgba(59,130,246,0.15); color: var(--cwr); border: 1px solid rgba(59,130,246,0.3); }
     .sync-btn.ks  { background: rgba(168,85,247,0.15); color: var(--ks);  border: 1px solid rgba(168,85,247,0.3); }
     .sync-btn.twh { background: rgba(16,185,129,0.15); color: var(--twh); border: 1px solid rgba(16,185,129,0.3); }
+    .sync-btn.dh  { background: rgba(249,115,22,0.15); color: var(--dh);  border: 1px solid rgba(249,115,22,0.3); }
 
     /* ── Sync All ── */
     .sync-all-row {
@@ -387,6 +396,7 @@
     .source-tag.cwr { background: rgba(59,130,246,0.1);  color: var(--cwr); }
     .source-tag.ks  { background: rgba(168,85,247,0.1);  color: var(--ks); }
     .source-tag.twh { background: rgba(16,185,129,0.1);  color: var(--twh); }
+    .source-tag.dh  { background: rgba(249,115,22,0.1);  color: var(--dh); }
 
     .source-dot {
       width: 5px; height: 5px;
@@ -396,6 +406,7 @@
     .cwr .source-dot { background: var(--cwr); }
     .ks  .source-dot { background: var(--ks); }
     .twh .source-dot { background: var(--twh); }
+    .dh  .source-dot { background: var(--dh); }
 
     .feed-id {
       font-family: 'SF Mono', 'Fira Code', monospace;
@@ -418,6 +429,9 @@
     }
 
     /* ── Responsive ── */
+    @media (max-width: 1100px) {
+      .distributors { grid-template-columns: repeat(2, 1fr); }
+    }
     @media (max-width: 768px) {
       .distributors { grid-template-columns: 1fr; }
       main { padding: 16px; }
@@ -567,6 +581,50 @@
       </div>
     </div>
 
+    <!-- D&H -->
+    <div class="dist-card" id="card-dandh">
+      <div class="dist-card-top">
+        <div class="dist-header">
+          <div class="dist-name">
+            <div class="dist-badge dh"></div>
+            <h2>D&amp;H</h2>
+          </div>
+          <span class="pill idle" id="dh-status">—</span>
+        </div>
+        <div class="dist-stats">
+          <div class="dist-stat">
+            <div class="label">SKUs Sent</div>
+            <div class="value dh" id="dh-total">—</div>
+            <div class="sub">last feed</div>
+          </div>
+          <div class="dist-stat">
+            <div class="label">Last Sync</div>
+            <div class="value" style="font-size:15px" id="dh-time">—</div>
+            <div class="sub" id="dh-time-full">Never</div>
+          </div>
+          <div class="dist-stat" id="dh-disc-stat">
+            <div class="label">Zeroed Out</div>
+            <div class="value" style="font-size:18px;color:var(--warning)" id="dh-disc">—</div>
+            <div class="sub">discontinued</div>
+          </div>
+        </div>
+      </div>
+      <div class="progress-area" id="progress-dandh">
+        <div class="progress-step" id="progress-step-dandh">Starting…</div>
+        <div class="progress-track">
+          <div class="progress-fill dh" id="progress-fill-dandh" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-chunks-dandh"></span>
+          <span id="progress-pct-dandh">0%</span>
+        </div>
+      </div>
+      <div class="dist-card-bottom">
+        <div class="dist-schedule">Schedule: <span>1am · 7am · 1pm · 7pm</span></div>
+        <button class="sync-btn dh" onclick="triggerSync('dandh')" id="btn-dandh">Sync D&amp;H Now</button>
+      </div>
+    </div>
+
   </div>
 
   <!-- Sync All -->
@@ -587,6 +645,7 @@
         <button class="filter-tab" onclick="setFilter('cwr', this)">CWR</button>
         <button class="filter-tab" onclick="setFilter('keystone', this)">Keystone</button>
         <button class="filter-tab" onclick="setFilter('twh', this)">TWH</button>
+        <button class="filter-tab" onclick="setFilter('dandh', this)">D&amp;H</button>
       </div>
     </div>
     <table>
@@ -617,8 +676,8 @@
   let progressInterval = null;
   let progressEverSeen = new Set(); // tracks which sources have shown progress this session
 
-  const srcLabel = { cwr: 'CWR', keystone: 'Keystone', twh: 'TWH' };
-  const srcClass = { cwr: 'cwr', keystone: 'ks', twh: 'twh' };
+  const srcLabel = { cwr: 'CWR', keystone: 'Keystone', twh: 'TWH', dandh: 'D&H' };
+  const srcClass = { cwr: 'cwr', keystone: 'ks', twh: 'twh', dandh: 'dh' };
 
   function timeAgo(d) {
     if (!d) return '—';
@@ -657,7 +716,8 @@
     const pct    = document.getElementById(`progress-pct-${src}`);
     const chunks = document.getElementById(`progress-chunks-${src}`);
     const card   = document.getElementById(`card-${src}`);
-    const btn    = document.getElementById(src === 'keystone' ? 'btn-ks' : `btn-${src}`);
+    const btnId  = src === 'keystone' ? 'btn-ks' : src === 'dandh' ? 'btn-dandh' : `btn-${src}`;
+    const btn    = document.getElementById(btnId);
     const pill   = document.getElementById(`${cls}-status`);
 
     area.classList.add('visible');
@@ -686,8 +746,9 @@
     const cls = srcClass[src];
     const area = document.getElementById(`progress-${src}`);
     const card = document.getElementById(`card-${src}`);
-    const btn  = document.getElementById(src === 'keystone' ? 'btn-ks' : `btn-${src}`);
-    const lbls = { cwr: 'Sync CWR Now', keystone: 'Sync Keystone Now', twh: 'Sync TWH Now' };
+    const btnId = src === 'keystone' ? 'btn-ks' : src === 'dandh' ? 'btn-dandh' : `btn-${src}`;
+    const btn  = document.getElementById(btnId);
+    const lbls = { cwr: 'Sync CWR Now', keystone: 'Sync Keystone Now', twh: 'Sync TWH Now', dandh: 'Sync D&H Now' };
 
     area.classList.remove('visible');
     card.className = 'dist-card';
@@ -697,7 +758,7 @@
   async function loadProgress() {
     try {
       const data = await (await fetch(`${API}/api/progress`)).json();
-      const sources = ['cwr', 'keystone', 'twh'];
+      const sources = ['cwr', 'keystone', 'twh', 'dandh'];
       let anyActive = false;
 
       let finishedSources = [];
@@ -768,6 +829,7 @@
       fillDist('cwr',      data.last_cwr);
       fillDist('keystone', data.last_keystone);
       fillDist('twh',      data.last_twh);
+      fillDist('dandh',    data.last_dandh);
     } catch(e) { console.error(e); }
   }
 
@@ -791,10 +853,11 @@
     timeEl.textContent  = timeAgo(last.completed_at);
     fullEl.textContent  = fmtTime(last.completed_at);
 
-    // CWR-only: show discontinued count
-    if (src === 'cwr') {
-      const discStat = document.getElementById('cwr-disc-stat');
-      const discEl   = document.getElementById('cwr-disc');
+    // CWR + D&H: show discontinued count
+    if (src === 'cwr' || src === 'dandh') {
+      const prefix   = src === 'cwr' ? 'cwr' : 'dh';
+      const discStat = document.getElementById(`${prefix}-disc-stat`);
+      const discEl   = document.getElementById(`${prefix}-disc`);
       discEl.textContent     = last.disc_count != null ? last.disc_count.toLocaleString() : '0';
       discStat.style.display = '';
     }
@@ -815,7 +878,8 @@
 
       tbody.innerHTML = runs.map(r => {
         const cls = srcClass[r.source] || '';
-        const discCell = r.source === 'cwr'
+        const showDisc = r.source === 'cwr' || r.source === 'dandh';
+        const discCell = showDisc
           ? `<span style="color:${r.disc_count > 0 ? 'var(--warning)' : 'var(--muted)'};font-weight:${r.disc_count > 0 ? '600' : '400'}">${(r.disc_count ?? 0).toLocaleString()}</span>`
           : '—';
         return `
@@ -844,8 +908,8 @@
     loadRuns();
   }
 
-  const btnMap = { cwr: 'btn-cwr', keystone: 'btn-ks', twh: 'btn-twh', all: 'btn-all' };
-  const lblMap = { cwr: 'Sync CWR Now', keystone: 'Sync Keystone Now', twh: 'Sync TWH Now', all: 'Sync All Now' };
+  const btnMap = { cwr: 'btn-cwr', keystone: 'btn-ks', twh: 'btn-twh', dandh: 'btn-dandh', all: 'btn-all' };
+  const lblMap = { cwr: 'Sync CWR Now', keystone: 'Sync Keystone Now', twh: 'Sync TWH Now', dandh: 'Sync D&H Now', all: 'Sync All Now' };
 
   async function triggerSync(source) {
     const btnId = btnMap[source];
@@ -870,7 +934,7 @@
     }
 
     // Safety: always re-enable buttons after 90s in case progress never fires
-    const srcList = source === 'all' ? ['cwr', 'keystone', 'twh'] : [source];
+    const srcList = source === 'all' ? ['cwr', 'keystone', 'twh', 'dandh'] : [source];
     setTimeout(() => {
       srcList.forEach(s => {
         const b = document.getElementById(s === 'keystone' ? 'btn-ks' : `btn-${s}`);
