@@ -38,10 +38,26 @@ WM_CLIENT_ID     = os.getenv('WM_CLIENT_ID', '47f10f25-5746-41a6-be4a-db812f9498
 WM_CLIENT_SECRET = os.getenv('WM_CLIENT_SECRET', 'C11fEdT35CMZfGxND0q54-LgDsjKXsHVpQojyeYcGE0ulVWiqdTsZ-hvneSJpInP3cOWwmq_-8aKsigRUwDNRQ')
 WM_BASE_URL      = 'https://marketplace.walmartapis.com'
 
-DB_PATH = os.getenv('DB_PATH', 'dropmate.db')
-PORT    = int(os.getenv('PORT', '8080'))
+DB_PATH    = os.getenv('DB_PATH', 'dropmate.db')
+PORT       = int(os.getenv('PORT', '8080'))
+CHUNK_SIZE = 25000
+EASTERN    = timezone(timedelta(hours=-4))
 
-EASTERN = timezone(timedelta(hours=-4))  # EDT — auto-DST handled by scheduler
+# --- In-memory progress tracking ---
+_progress = {}  # keyed by source: cwr / keystone / twh
+_progress_lock = threading.Lock()
+
+def set_progress(source, **kwargs):
+    with _progress_lock:
+        _progress[source] = {**_progress.get(source, {}), **kwargs}
+
+def clear_progress(source):
+    with _progress_lock:
+        _progress.pop(source, None)
+
+def get_progress():
+    with _progress_lock:
+        return dict(_progress)
 
 # --- Database ---
 def get_db():
@@ -66,12 +82,10 @@ def init_db():
 
 # --- CWR ---
 def fetch_cwr_inventory():
+    set_progress('cwr', step='Fetching from CWR feed…', pct=5)
     resp = requests.get(CWR_FEED_URL, params={
-        'id':      CWR_FEED_ID,
-        'version': 3,
-        'format':  'csv',
-        'fields':  'sku,qty',
-        'ohtime':  0,
+        'id': CWR_FEED_ID, 'version': 3, 'format': 'csv',
+        'fields': 'sku,qty', 'ohtime': 0,
     }, timeout=120)
     resp.raise_for_status()
     rows = list(csv.DictReader(io.StringIO(resp.text), fieldnames=['sku', 'qty']))
@@ -92,24 +106,26 @@ class ImplicitFTPS(ftplib.FTP_TLS):
         return self.welcome
 
 def fetch_keystone_inventory():
+    set_progress('keystone', step='Connecting to Keystone FTP…', pct=5)
     ftp = ImplicitFTPS()
     ftp.connect(KS_FTP_HOST, KS_FTP_PORT)
     ftp.login(KS_FTP_USER, KS_FTP_PASS)
     ftp.set_pasv(True)
     ftp.prot_c()
+    set_progress('keystone', step='Downloading Inventory.csv…', pct=15)
     buf = io.BytesIO()
     ftp.retrbinary(f'RETR {KS_FTP_FILE}', buf.write)
     ftp.quit()
+    set_progress('keystone', step='Parsing CSV…', pct=25)
     content = buf.getvalue().decode('utf-8', errors='replace')
     reader = csv.DictReader(io.StringIO(content))
     records = []
     for row in reader:
         sku = str(row.get('VCPN') or '').strip()
-        qty_raw = str(row.get('TotalQty') or '0').strip()
         if not sku:
             continue
         try:
-            qty = int(float(qty_raw))
+            qty = int(float(str(row.get('TotalQty') or '0')))
         except ValueError:
             qty = 0
         records.append({'sku': sku, 'qty': qty})
@@ -117,26 +133,28 @@ def fetch_keystone_inventory():
 
 # --- TWH ---
 def fetch_twh_inventory():
+    set_progress('twh', step='Connecting to TWH FTP…', pct=5)
     ftp = ftplib.FTP()
     ftp.connect(TWH_FTP_HOST, 21, timeout=30)
     ftp.login(TWH_FTP_USER, TWH_FTP_PASS)
     ftp.set_pasv(True)
+    set_progress('twh', step='Downloading inventory file…', pct=15)
     buf = io.BytesIO()
     ftp.retrbinary(f'RETR {TWH_FTP_FILE}', buf.write)
     ftp.quit()
+    set_progress('twh', step='Parsing CSV…', pct=25)
     content = buf.getvalue().decode('utf-8', errors='replace')
     reader = csv.DictReader(io.StringIO(content))
     records = []
     for row in reader:
         sku = str(row.get('itemcode') or '').strip()
-        qty_raw = str(row.get('totalQty') or '0').strip()
         if not sku:
             continue
         try:
-            qty = int(float(qty_raw))
+            qty = int(float(str(row.get('totalQty') or '0')))
         except ValueError:
             qty = 0
-        records.append({'sku': f'TWH-{sku}', 'qty': qty})  # prefix for Walmart
+        records.append({'sku': f'TWH-{sku}', 'qty': qty})
     return records
 
 # --- Walmart ---
@@ -172,10 +190,8 @@ def build_inventory_xml(records):
         except ValueError:
             qty = 0
         lines.append(
-            f'  <inventory>'
-            f'<sku>{sku}</sku>'
-            f'<quantity><unit>EACH</unit><amount>{qty}</amount></quantity>'
-            f'</inventory>'
+            f'  <inventory><sku>{sku}</sku>'
+            f'<quantity><unit>EACH</unit><amount>{qty}</amount></quantity></inventory>'
         )
     lines.append('</InventoryFeed>')
     return '\n'.join(lines)
@@ -196,81 +212,99 @@ def upload_bulk_feed(token, xml_data, feed_name):
     )
     return resp
 
-# --- Sync runners ---
-CHUNK_SIZE = 25000  # SKUs per feed upload
-
 def chunked(lst, size):
     for i in range(0, len(lst), size):
         yield lst[i:i + size]
 
+# --- Sync ---
 def run_sync(source, fetch_fn, feed_prefix):
     now = datetime.now(EASTERN)
-    ts = f"{now.strftime('%m%d')}-{now.strftime('%I%p').lower()}"
-    logger.info(f"=== {source.upper()} sync starting | {feed_prefix}-{ts} ===")
-    start = time.time()
+    ts  = f"{now.strftime('%m%d')}-{now.strftime('%I%p').lower()}"
+    logger.info(f"=== {source.upper()} sync starting ===")
 
+    set_progress(source, step='Starting…', pct=0, started=now.isoformat(), total=0, chunks_done=0, chunks_total=0)
+
+    start = time.time()
     with get_db() as conn:
         cur = conn.execute("INSERT INTO sync_runs (source, status) VALUES (?, 'running')", (source,))
         run_id = cur.lastrowid
 
+    # Fetch
     try:
         records = fetch_fn()
         logger.info(f"[{source}] Fetched {len(records)} SKUs")
+        set_progress(source, step='Fetched — authenticating with Walmart…', pct=30, total=len(records))
     except Exception as e:
         logger.error(f"[{source}] Fetch failed: {e}")
+        set_progress(source, step=f'Fetch failed: {e}', pct=0, error=True)
         with get_db() as conn:
             conn.execute("UPDATE sync_runs SET status='error', completed_at=datetime('now') WHERE id=?", (run_id,))
+        clear_progress(source)
         return
 
+    # Auth
     try:
         token = get_walmart_token()
     except Exception as e:
         logger.error(f"[{source}] Walmart auth failed: {e}")
+        set_progress(source, step=f'Walmart auth failed: {e}', pct=0, error=True)
         with get_db() as conn:
             conn.execute("UPDATE sync_runs SET status='error', completed_at=datetime('now') WHERE id=?", (run_id,))
+        clear_progress(source)
         return
 
+    # Upload chunks
     chunks = list(chunked(records, CHUNK_SIZE))
+    set_progress(source, chunks_total=len(chunks), step='Uploading to Walmart…', pct=35)
     feed_ids = []
-    failed = 0
+    failed   = 0
+
     for i, chunk in enumerate(chunks, 1):
         feed_name = f"{feed_prefix}-{ts}-p{i}.xml"
+        pct = 35 + int((i / len(chunks)) * 60)
+        set_progress(source, step=f'Uploading chunk {i}/{len(chunks)} ({len(chunk):,} SKUs)…', pct=pct, chunks_done=i-1)
         xml_data = build_inventory_xml(chunk)
-        # Retry up to 3 times on 429 rate limit
+
         for attempt in range(3):
             try:
                 resp = upload_bulk_feed(token, xml_data, feed_name)
                 if resp.status_code == 429:
                     wait = 30 * (attempt + 1)
-                    logger.warning(f"[{source}] Rate limited, waiting {wait}s before retry...")
+                    logger.warning(f"[{source}] Rate limited, waiting {wait}s…")
+                    set_progress(source, step=f'Rate limited — waiting {wait}s before retry…')
                     time.sleep(wait)
                     continue
                 resp.raise_for_status()
                 feed_id = resp.json().get('feedId', '')
                 feed_ids.append(feed_id)
-                logger.info(f"[{source}] Chunk {i}/{len(chunks)} submitted — feedId: {feed_id} | SKUs: {len(chunk)}")
+                logger.info(f"[{source}] Chunk {i}/{len(chunks)} ✓ feedId: {feed_id}")
+                set_progress(source, chunks_done=i)
                 break
             except Exception as e:
                 if attempt == 2:
-                    logger.error(f"[{source}] Chunk {i}/{len(chunks)} failed after 3 attempts: {e}")
+                    logger.error(f"[{source}] Chunk {i} failed: {e}")
                     failed += 1
                 else:
                     time.sleep(10)
-        time.sleep(5)  # pause between chunks
+        time.sleep(5)
 
-    status = 'error' if failed == len(chunks) else 'success'
+    status   = 'error' if failed == len(chunks) else 'success'
     duration = round(time.time() - start, 1)
+
     with get_db() as conn:
         conn.execute("""
             UPDATE sync_runs SET status=?, completed_at=datetime('now'),
             total=?, feed_id=?, duration_s=? WHERE id=?
         """, (status, len(records), feed_ids[0] if feed_ids else '', duration, run_id))
 
-    logger.info(f"[{source}] Done in {duration}s — {len(chunks) - failed}/{len(chunks)} chunks OK")
+    set_progress(source, step='Done ✓', pct=100, chunks_done=len(chunks))
+    logger.info(f"[{source}] Done in {duration}s — {len(chunks)-failed}/{len(chunks)} chunks OK")
+    time.sleep(3)
+    clear_progress(source)
 
 def sync_cwr_keystone():
     run_sync('cwr',      fetch_cwr_inventory,     'CWR-DMv2')
-    time.sleep(60)  # pause between distributors
+    time.sleep(60)
     run_sync('keystone', fetch_keystone_inventory, 'KS-DMv2')
 
 def sync_twh():
@@ -306,10 +340,14 @@ def status():
         'last_twh':      dict(last_twh)  if last_twh  else None,
     })
 
+@app.route('/api/progress')
+def progress():
+    return jsonify(get_progress())
+
 @app.route('/api/runs')
 def runs():
     source = request.args.get('source')
-    limit  = request.args.get('limit', 20, type=int)
+    limit  = request.args.get('limit', 40, type=int)
     with get_db() as conn:
         if source:
             rows = conn.execute(
@@ -337,13 +375,10 @@ def trigger_sync():
 
 if __name__ == '__main__':
     init_db()
-    sync_cwr_keystone()
-    sync_twh()
-
+    # No startup sync — scheduler handles it at fixed times
     scheduler = BackgroundScheduler(timezone='America/New_York')
-    scheduler.add_job(sync_cwr_keystone, 'cron', hour='0,6,12,18',  minute=0)
-    scheduler.add_job(sync_twh,          'cron', hour='3,9,15,21',  minute=0)
+    scheduler.add_job(sync_cwr_keystone, 'cron', hour='0,6,12,18', minute=0)
+    scheduler.add_job(sync_twh,          'cron', hour='3,9,15,21', minute=0)
     scheduler.start()
-    logger.info("Scheduler started — CWR/Keystone: 12am/6am/12pm/6pm | TWH: 3am/9am/3pm/9pm Eastern")
-
+    logger.info("Scheduler ready — CWR/Keystone: 12am/6am/12pm/6pm | TWH: 3am/9am/3pm/9pm Eastern")
     app.run(host='0.0.0.0', port=PORT)

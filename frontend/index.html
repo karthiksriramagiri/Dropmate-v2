@@ -75,6 +75,11 @@
       50%       { opacity: 0.4; }
     }
 
+    @keyframes shimmer {
+      0%   { background-position: -200% center; }
+      100% { background-position:  200% center; }
+    }
+
     .status-label { font-size: 12px; color: var(--muted); }
 
     .next-sync {
@@ -116,6 +121,9 @@
       transition: border-color 0.2s;
     }
     .dist-card:hover { border-color: var(--border2); }
+    .dist-card.syncing-cwr { border-color: rgba(59,130,246,0.4); }
+    .dist-card.syncing-ks  { border-color: rgba(168,85,247,0.4); }
+    .dist-card.syncing-twh { border-color: rgba(16,185,129,0.4); }
 
     .dist-card-top {
       padding: 20px 20px 16px;
@@ -183,6 +191,59 @@
     .value.cwr { color: var(--cwr); }
     .value.ks  { color: var(--ks); }
     .value.twh { color: var(--twh); }
+
+    /* ── Progress bar ── */
+    .progress-area {
+      display: none;
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .progress-area.visible { display: block; }
+
+    .progress-step {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .progress-step strong { color: var(--text); font-weight: 500; }
+
+    .progress-track {
+      height: 4px;
+      background: var(--border2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.4s ease;
+      background-size: 200% auto;
+    }
+    .progress-fill.cwr {
+      background: linear-gradient(90deg, var(--cwr), #60a5fa, var(--cwr));
+      animation: shimmer 2s linear infinite;
+    }
+    .progress-fill.ks {
+      background: linear-gradient(90deg, var(--ks), #c084fc, var(--ks));
+      animation: shimmer 2s linear infinite;
+    }
+    .progress-fill.twh {
+      background: linear-gradient(90deg, var(--twh), #34d399, var(--twh));
+      animation: shimmer 2s linear infinite;
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 10px;
+      color: var(--muted);
+    }
 
     .dist-card-bottom { padding: 14px 20px; }
 
@@ -384,7 +445,7 @@
   <div class="distributors">
 
     <!-- CWR -->
-    <div class="dist-card">
+    <div class="dist-card" id="card-cwr">
       <div class="dist-card-top">
         <div class="dist-header">
           <div class="dist-name">
@@ -406,6 +467,16 @@
           </div>
         </div>
       </div>
+      <div class="progress-area" id="progress-cwr">
+        <div class="progress-step" id="progress-step-cwr">Starting…</div>
+        <div class="progress-track">
+          <div class="progress-fill cwr" id="progress-fill-cwr" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-chunks-cwr"></span>
+          <span id="progress-pct-cwr">0%</span>
+        </div>
+      </div>
       <div class="dist-card-bottom">
         <div class="dist-schedule">Schedule: <span>12am · 6am · 12pm · 6pm</span></div>
         <button class="sync-btn cwr" onclick="triggerSync('cwr')" id="btn-cwr">Sync CWR Now</button>
@@ -413,7 +484,7 @@
     </div>
 
     <!-- Keystone -->
-    <div class="dist-card">
+    <div class="dist-card" id="card-keystone">
       <div class="dist-card-top">
         <div class="dist-header">
           <div class="dist-name">
@@ -435,6 +506,16 @@
           </div>
         </div>
       </div>
+      <div class="progress-area" id="progress-keystone">
+        <div class="progress-step" id="progress-step-keystone">Starting…</div>
+        <div class="progress-track">
+          <div class="progress-fill ks" id="progress-fill-keystone" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-chunks-keystone"></span>
+          <span id="progress-pct-keystone">0%</span>
+        </div>
+      </div>
       <div class="dist-card-bottom">
         <div class="dist-schedule">Schedule: <span>12am · 6am · 12pm · 6pm</span></div>
         <button class="sync-btn ks" onclick="triggerSync('keystone')" id="btn-ks">Sync Keystone Now</button>
@@ -442,7 +523,7 @@
     </div>
 
     <!-- TWH -->
-    <div class="dist-card">
+    <div class="dist-card" id="card-twh">
       <div class="dist-card-top">
         <div class="dist-header">
           <div class="dist-name">
@@ -462,6 +543,16 @@
             <div class="value" style="font-size:15px" id="twh-time">—</div>
             <div class="sub" id="twh-time-full">Never</div>
           </div>
+        </div>
+      </div>
+      <div class="progress-area" id="progress-twh">
+        <div class="progress-step" id="progress-step-twh">Starting…</div>
+        <div class="progress-track">
+          <div class="progress-fill twh" id="progress-fill-twh" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-chunks-twh"></span>
+          <span id="progress-pct-twh">0%</span>
         </div>
       </div>
       <div class="dist-card-bottom">
@@ -516,6 +607,7 @@
 <script>
   const API = 'https://dropmate-v2-production.up.railway.app';
   let activeFilter = 'all';
+  let progressInterval = null;
 
   const srcLabel = { cwr: 'CWR', keystone: 'Keystone', twh: 'TWH' };
   const srcClass = { cwr: 'cwr', keystone: 'ks', twh: 'twh' };
@@ -523,9 +615,9 @@
   function timeAgo(d) {
     if (!d) return '—';
     const s = Math.floor((Date.now() - new Date(d + 'Z')) / 1000);
-    if (s < 60)   return `${s}s ago`;
-    if (s < 3600) return `${Math.floor(s/60)}m ago`;
-    if (s < 86400)return `${Math.floor(s/3600)}h ago`;
+    if (s < 60)    return `${s}s ago`;
+    if (s < 3600)  return `${Math.floor(s/60)}m ago`;
+    if (s < 86400) return `${Math.floor(s/3600)}h ago`;
     return `${Math.floor(s/86400)}d ago`;
   }
 
@@ -548,6 +640,91 @@
     return `${Math.floor(diff/60)}h ${diff%60}m`;
   }
 
+  // Show/hide progress bar for a source
+  function showProgress(src, p) {
+    const cls = srcClass[src];
+    const area   = document.getElementById(`progress-${src}`);
+    const step   = document.getElementById(`progress-step-${src}`);
+    const fill   = document.getElementById(`progress-fill-${src}`);
+    const pct    = document.getElementById(`progress-pct-${src}`);
+    const chunks = document.getElementById(`progress-chunks-${src}`);
+    const card   = document.getElementById(`card-${src}`);
+    const btn    = document.getElementById(src === 'keystone' ? 'btn-ks' : `btn-${src}`);
+    const pill   = document.getElementById(`${cls}-status`);
+
+    area.classList.add('visible');
+    card.className = `dist-card syncing-${cls}`;
+    pill.textContent = 'syncing';
+    pill.className   = 'pill running';
+
+    step.innerHTML = p.step || 'Working…';
+    fill.style.width = (p.pct || 0) + '%';
+    pct.textContent  = (p.pct || 0) + '%';
+
+    if (p.chunks_total > 0) {
+      chunks.textContent = `Chunk ${p.chunks_done || 0}/${p.chunks_total}`;
+    } else if (p.total > 0) {
+      chunks.textContent = `${(p.total).toLocaleString()} SKUs`;
+    } else {
+      chunks.textContent = '';
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  }
+
+  function hideProgress(src) {
+    const cls = srcClass[src];
+    const area = document.getElementById(`progress-${src}`);
+    const card = document.getElementById(`card-${src}`);
+    const btn  = document.getElementById(src === 'keystone' ? 'btn-ks' : `btn-${src}`);
+    const lbls = { cwr: 'Sync CWR Now', keystone: 'Sync Keystone Now', twh: 'Sync TWH Now' };
+
+    area.classList.remove('visible');
+    card.className = 'dist-card';
+    if (btn) { btn.disabled = false; btn.textContent = lbls[src]; }
+  }
+
+  async function loadProgress() {
+    try {
+      const data = await (await fetch(`${API}/api/progress`)).json();
+      const sources = ['cwr', 'keystone', 'twh'];
+      let anyActive = false;
+
+      sources.forEach(src => {
+        if (data[src]) {
+          showProgress(src, data[src]);
+          anyActive = true;
+        } else {
+          hideProgress(src);
+        }
+      });
+
+      // Update header dot
+      const dot   = document.getElementById('status-dot');
+      const label = document.getElementById('status-label');
+      if (anyActive) {
+        dot.className = 'status-dot syncing';
+        label.textContent = 'Syncing…';
+      } else {
+        dot.className = 'status-dot';
+        label.textContent = 'Live';
+        // Reload status/runs when sync finishes
+        loadStatus();
+        loadRuns();
+      }
+    } catch(e) { console.error(e); }
+  }
+
+  function startProgressPolling() {
+    if (progressInterval) return;
+    progressInterval = setInterval(loadProgress, 2500);
+    loadProgress();
+  }
+
+  function stopProgressPolling() {
+    if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+  }
+
   async function loadStatus() {
     try {
       const res  = await fetch(`${API}/api/status`);
@@ -555,15 +732,21 @@
 
       const dot   = document.getElementById('status-dot');
       const label = document.getElementById('status-label');
-      if (data.is_running) {
-        dot.className = 'status-dot syncing';
-        label.textContent = 'Syncing…';
-      } else {
-        dot.className = 'status-dot';
-        label.textContent = 'Live';
+
+      // Only update dot if not already being driven by progress polling
+      if (!progressInterval) {
+        if (data.is_running) {
+          dot.className = 'status-dot syncing';
+          label.textContent = 'Syncing…';
+          startProgressPolling();
+        } else {
+          dot.className = 'status-dot';
+          label.textContent = 'Live';
+        }
+      } else if (data.is_running) {
+        startProgressPolling();
       }
 
-      // next sync countdown (earliest of CWR/KS at 0,6,12,18 and TWH at 3,9,15,21)
       const cwrNext = nextOccurrence([0,6,12,18]);
       document.getElementById('next-sync-time').textContent = `in ${cwrNext}`;
 
@@ -582,11 +765,16 @@
 
     if (!last) return;
 
-    statusEl.textContent = last.status;
-    statusEl.className   = `pill ${last.status}`;
-    totalEl.textContent  = last.total?.toLocaleString() ?? '—';
-    timeEl.textContent   = timeAgo(last.completed_at);
-    fullEl.textContent   = fmtTime(last.completed_at);
+    // Don't overwrite status pill if sync is actively running for this source
+    const progressArea = document.getElementById(`progress-${src}`);
+    if (!progressArea.classList.contains('visible')) {
+      statusEl.textContent = last.status;
+      statusEl.className   = `pill ${last.status}`;
+    }
+
+    totalEl.textContent = last.total?.toLocaleString() ?? '—';
+    timeEl.textContent  = timeAgo(last.completed_at);
+    fullEl.textContent  = fmtTime(last.completed_at);
   }
 
   async function loadRuns() {
@@ -636,7 +824,7 @@
     const btnId = btnMap[source];
     const btn   = document.getElementById(btnId);
     btn.disabled    = true;
-    btn.textContent = 'Syncing…';
+    btn.textContent = 'Starting…';
 
     try {
       await fetch(`${API}/api/sync`, {
@@ -644,16 +832,35 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source })
       });
-      setTimeout(() => { loadStatus(); loadRuns(); }, 2000);
-    } catch(e) { console.error(e); }
-
-    setTimeout(() => {
+      // Start polling progress immediately
+      startProgressPolling();
+    } catch(e) {
+      console.error(e);
       btn.disabled    = false;
       btn.textContent = lblMap[source];
-    }, 8000);
+      return;
+    }
+
+    // Re-enable Sync All button after a delay (individual source buttons re-enabled by hideProgress)
+    if (source === 'all') {
+      setTimeout(() => {
+        btn.disabled    = false;
+        btn.textContent = lblMap[source];
+      }, 10000);
+    }
   }
 
-  function refresh() { loadStatus(); loadRuns(); }
+  function refresh() {
+    loadStatus();
+    loadRuns();
+    // Check if a sync is running and start polling if so
+    fetch(`${API}/api/progress`).then(r => r.json()).then(data => {
+      const active = ['cwr','keystone','twh'].some(s => data[s]);
+      if (active) startProgressPolling();
+      else stopProgressPolling();
+    }).catch(() => {});
+  }
+
   refresh();
   setInterval(refresh, 30000);
 </script>
