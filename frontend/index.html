@@ -127,36 +127,41 @@
 <main>
   <div class="stats">
     <div class="stat-card">
-      <div class="label">Last Sync</div>
-      <div class="value blue" id="stat-time">—</div>
-      <div class="sub" id="stat-time-sub">Never</div>
+      <div class="label">CWR Last Sync</div>
+      <div class="value blue" id="stat-cwr-time">—</div>
+      <div class="sub" id="stat-cwr-sub">Never</div>
     </div>
     <div class="stat-card">
-      <div class="label">SKUs Submitted</div>
-      <div class="value green" id="stat-updated">—</div>
-      <div class="sub">last bulk feed</div>
+      <div class="label">CWR SKUs Sent</div>
+      <div class="value green" id="stat-cwr-total">—</div>
+      <div class="sub">last feed</div>
     </div>
     <div class="stat-card">
-      <div class="label">Feed Name</div>
-      <div class="value" style="font-size:13px;margin-top:6px" id="stat-feed">—</div>
-      <div class="sub">last run</div>
+      <div class="label">Keystone Last Sync</div>
+      <div class="value blue" id="stat-ks-time">—</div>
+      <div class="sub" id="stat-ks-sub">Never</div>
     </div>
     <div class="stat-card">
-      <div class="label">Next Sync</div>
-      <div class="value blue" id="stat-next">—</div>
-      <div class="sub">every 6 hours</div>
+      <div class="label">Keystone SKUs Sent</div>
+      <div class="value green" id="stat-ks-total">—</div>
+      <div class="sub">last feed</div>
     </div>
   </div>
 
   <div class="section">
     <div class="section-header">
       <h2>Sync History</h2>
-      <button id="sync-btn" onclick="triggerSync()">Sync Now</button>
+      <div style="display:flex;gap:8px">
+        <button onclick="triggerSync('cwr')">Sync CWR</button>
+        <button onclick="triggerSync('keystone')">Sync Keystone</button>
+        <button onclick="triggerSync('all')" style="background:#6366f1">Sync All</button>
+      </div>
     </div>
     <table>
       <thead>
         <tr>
           <th>Time</th>
+          <th>Source</th>
           <th>Status</th>
           <th>SKUs Sent</th>
           <th>Feed ID</th>
@@ -170,7 +175,7 @@
   </div>
 </main>
 
-<footer>DropMate v2 — CWR → Walmart sync · refreshes every 30s</footer>
+<footer>DropMate v2 — CWR + Keystone → Walmart · refreshes every 30s</footer>
 
 <script>
   const API = 'https://dropmate-v2-production.up.railway.app';
@@ -193,28 +198,27 @@
     try {
       const res = await fetch(`${API}/api/status`);
       const data = await res.json();
-      const last = data.last_run;
+      const cwr = data.last_cwr;
+      const ks  = data.last_keystone;
 
       const badge = document.getElementById('header-badge');
       if (data.is_running) {
-        badge.textContent = 'Syncing…';
-        badge.className = 'badge syncing';
-      } else if (last?.status === 'error') {
-        badge.textContent = 'Error';
-        badge.className = 'badge error';
+        badge.textContent = 'Syncing…'; badge.className = 'badge syncing';
+      } else if (cwr?.status === 'error' || ks?.status === 'error') {
+        badge.textContent = 'Error'; badge.className = 'badge error';
       } else {
-        badge.textContent = 'Live';
-        badge.className = 'badge live';
+        badge.textContent = 'Live'; badge.className = 'badge live';
       }
 
-      if (last) {
-        document.getElementById('stat-time').textContent = timeAgo(last.completed_at);
-        document.getElementById('stat-time-sub').textContent = formatTime(last.completed_at);
-        document.getElementById('stat-updated').textContent = last.total ?? '—';
-        document.getElementById('stat-feed').textContent = last.feed_id ? last.feed_id.slice(0, 16) + '…' : '—';
-        const nextMs = new Date(last.completed_at + 'Z').getTime() + data.interval_minutes * 60000;
-        const minsLeft = Math.max(0, Math.round((nextMs - Date.now()) / 60000));
-        document.getElementById('stat-next').textContent = minsLeft > 0 ? `${minsLeft}m` : 'Soon';
+      if (cwr) {
+        document.getElementById('stat-cwr-time').textContent  = timeAgo(cwr.completed_at);
+        document.getElementById('stat-cwr-sub').textContent   = formatTime(cwr.completed_at);
+        document.getElementById('stat-cwr-total').textContent = cwr.total ?? '—';
+      }
+      if (ks) {
+        document.getElementById('stat-ks-time').textContent  = timeAgo(ks.completed_at);
+        document.getElementById('stat-ks-sub').textContent   = formatTime(ks.completed_at);
+        document.getElementById('stat-ks-total').textContent = ks.total ?? '—';
       }
     } catch (e) {
       console.error('Status fetch failed:', e);
@@ -223,7 +227,7 @@
 
   async function loadRuns() {
     try {
-      const res = await fetch(`${API}/api/runs?limit=20`);
+      const res = await fetch(`${API}/api/runs?limit=30`);
       const runs = await res.json();
       const tbody = document.getElementById('runs-body');
 
@@ -232,12 +236,14 @@
         return;
       }
 
+      const srcLabel = { cwr: 'CWR', keystone: 'Keystone' };
       tbody.innerHTML = runs.map(r => `
         <tr>
           <td>${formatTime(r.started_at)}</td>
+          <td><span class="pill" style="background:#1e1e2e;color:#a78bfa;border:1px solid #4c1d95">${srcLabel[r.source] || r.source}</span></td>
           <td><span class="pill ${r.status}">${r.status}</span></td>
           <td>${r.total ?? '—'}</td>
-          <td style="font-size:11px;color:#555">${r.feed_id ? r.feed_id.slice(0, 20) + '…' : '—'}</td>
+          <td style="font-size:11px;color:#555">${r.feed_id ? r.feed_id.slice(0, 18) + '…' : '—'}</td>
           <td>${r.duration_s != null ? r.duration_s + 's' : '—'}</td>
         </tr>
       `).join('');
@@ -246,17 +252,17 @@
     }
   }
 
-  async function triggerSync() {
-    const btn = document.getElementById('sync-btn');
-    btn.disabled = true;
-    btn.textContent = 'Syncing…';
+  async function triggerSync(source) {
     try {
-      await fetch(`${API}/api/sync`, { method: 'POST' });
+      await fetch(`${API}/api/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source })
+      });
       setTimeout(() => { loadStatus(); loadRuns(); }, 2000);
     } catch (e) {
       console.error('Trigger failed:', e);
     }
-    setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync Now'; }, 5000);
   }
 
   function refresh() { loadStatus(); loadRuns(); }
