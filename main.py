@@ -212,9 +212,9 @@ if __name__ == '__main__':
     init_db()
     sync()
 
-    scheduler = BackgroundScheduler(timezone='UTC')
-    scheduler.add_job(sync, 'interval', minutes=SYNC_INTERVAL_MINUTES)
+    scheduler = BackgroundScheduler(timezone='America/New_York')
+    scheduler.add_job(sync, 'cron', hour='0,6,12,18', minute=0)
     scheduler.start()
-    logger.info(f"Scheduler started — syncing every {SYNC_INTERVAL_MINUTES} min")
+    logger.info("Scheduler started — syncing at 12am, 6am, 12pm, 6pm Eastern")
 
     app.run(host='0.0.0.0', port=PORT)
