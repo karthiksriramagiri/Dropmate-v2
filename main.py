@@ -235,17 +235,28 @@ def run_sync(source, fetch_fn, feed_prefix):
     failed = 0
     for i, chunk in enumerate(chunks, 1):
         feed_name = f"{feed_prefix}-{ts}-p{i}.xml"
-        try:
-            xml_data = build_inventory_xml(chunk)
-            resp = upload_bulk_feed(token, xml_data, feed_name)
-            resp.raise_for_status()
-            feed_id = resp.json().get('feedId', '')
-            feed_ids.append(feed_id)
-            logger.info(f"[{source}] Chunk {i}/{len(chunks)} submitted — feedId: {feed_id} | SKUs: {len(chunk)}")
-        except Exception as e:
-            logger.error(f"[{source}] Chunk {i}/{len(chunks)} failed: {e}")
-            failed += 1
-        time.sleep(1)  # brief pause between chunks
+        xml_data = build_inventory_xml(chunk)
+        # Retry up to 3 times on 429 rate limit
+        for attempt in range(3):
+            try:
+                resp = upload_bulk_feed(token, xml_data, feed_name)
+                if resp.status_code == 429:
+                    wait = 30 * (attempt + 1)
+                    logger.warning(f"[{source}] Rate limited, waiting {wait}s before retry...")
+                    time.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                feed_id = resp.json().get('feedId', '')
+                feed_ids.append(feed_id)
+                logger.info(f"[{source}] Chunk {i}/{len(chunks)} submitted — feedId: {feed_id} | SKUs: {len(chunk)}")
+                break
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"[{source}] Chunk {i}/{len(chunks)} failed after 3 attempts: {e}")
+                    failed += 1
+                else:
+                    time.sleep(10)
+        time.sleep(5)  # pause between chunks
 
     status = 'error' if failed == len(chunks) else 'success'
     duration = round(time.time() - start, 1)
@@ -259,7 +270,9 @@ def run_sync(source, fetch_fn, feed_prefix):
 
 def sync_all():
     run_sync('cwr',      fetch_cwr_inventory,      'CWR-DMv2')
+    time.sleep(60)  # let Walmart breathe between distributors
     run_sync('keystone', fetch_keystone_inventory,  'KS-DMv2')
+    time.sleep(60)
     run_sync('twh',      fetch_twh_inventory,       'TWH-DMv2')
 
 # --- Flask ---
