@@ -132,19 +132,19 @@
       <div class="sub" id="stat-time-sub">Never</div>
     </div>
     <div class="stat-card">
-      <div class="label">SKUs Updated</div>
+      <div class="label">SKUs Submitted</div>
       <div class="value green" id="stat-updated">—</div>
+      <div class="sub">last bulk feed</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Feed Name</div>
+      <div class="value" style="font-size:13px;margin-top:6px" id="stat-feed">—</div>
       <div class="sub">last run</div>
     </div>
     <div class="stat-card">
-      <div class="label">Total SKUs</div>
-      <div class="value" id="stat-total">—</div>
-      <div class="sub">from CWR</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Errors</div>
-      <div class="value red" id="stat-errors">—</div>
-      <div class="sub">last run</div>
+      <div class="label">Next Sync</div>
+      <div class="value blue" id="stat-next">—</div>
+      <div class="sub">every 6 hours</div>
     </div>
   </div>
 
@@ -158,9 +158,8 @@
         <tr>
           <th>Time</th>
           <th>Status</th>
-          <th>Total</th>
-          <th>Updated</th>
-          <th>Errors</th>
+          <th>SKUs Sent</th>
+          <th>Feed ID</th>
           <th>Duration</th>
         </tr>
       </thead>
@@ -211,9 +210,11 @@
       if (last) {
         document.getElementById('stat-time').textContent = timeAgo(last.completed_at);
         document.getElementById('stat-time-sub').textContent = formatTime(last.completed_at);
-        document.getElementById('stat-updated').textContent = last.updated ?? '—';
-        document.getElementById('stat-total').textContent = last.total ?? '—';
-        document.getElementById('stat-errors').textContent = last.errors ?? '—';
+        document.getElementById('stat-updated').textContent = last.total ?? '—';
+        document.getElementById('stat-feed').textContent = last.feed_id ? last.feed_id.slice(0, 16) + '…' : '—';
+        const nextMs = new Date(last.completed_at + 'Z').getTime() + data.interval_minutes * 60000;
+        const minsLeft = Math.max(0, Math.round((nextMs - Date.now()) / 60000));
+        document.getElementById('stat-next').textContent = minsLeft > 0 ? `${minsLeft}m` : 'Soon';
       }
     } catch (e) {
       console.error('Status fetch failed:', e);
@@ -236,8 +237,7 @@
           <td>${formatTime(r.started_at)}</td>
           <td><span class="pill ${r.status}">${r.status}</span></td>
           <td>${r.total ?? '—'}</td>
-          <td>${r.updated ?? '—'}</td>
-          <td>${r.errors ?? '—'}</td>
+          <td style="font-size:11px;color:#555">${r.feed_id ? r.feed_id.slice(0, 20) + '…' : '—'}</td>
           <td>${r.duration_s != null ? r.duration_s + 's' : '—'}</td>
         </tr>
       `).join('');
