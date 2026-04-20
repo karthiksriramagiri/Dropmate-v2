@@ -210,6 +210,7 @@
       text-overflow: ellipsis;
     }
     .progress-step strong { color: var(--text); font-weight: 500; }
+    .progress-step.rate-limited { color: var(--warning); }
 
     .progress-track {
       height: 4px;
@@ -658,7 +659,9 @@
     pill.textContent = 'syncing';
     pill.className   = 'pill running';
 
-    step.innerHTML = p.step || 'Working…';
+    const isRateLimited = (p.step || '').toLowerCase().includes('rate limited');
+    step.textContent = p.step || 'Working…';
+    step.className = 'progress-step' + (isRateLimited ? ' rate-limited' : '');
     fill.style.width = (p.pct || 0) + '%';
     pct.textContent  = (p.pct || 0) + '%';
 

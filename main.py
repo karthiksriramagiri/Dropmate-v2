@@ -265,13 +265,14 @@ def run_sync(source, fetch_fn, feed_prefix):
         set_progress(source, step=f'Uploading chunk {i}/{len(chunks)} ({len(chunk):,} SKUs)…', pct=pct, chunks_done=i-1)
         xml_data = build_inventory_xml(chunk)
 
-        for attempt in range(3):
+        rate_waits = [60, 120, 180, 240, 300]
+        for attempt in range(5):
             try:
                 resp = upload_bulk_feed(token, xml_data, feed_name)
                 if resp.status_code == 429:
-                    wait = 30 * (attempt + 1)
+                    wait = rate_waits[min(attempt, len(rate_waits)-1)]
                     logger.warning(f"[{source}] Rate limited, waiting {wait}s…")
-                    set_progress(source, step=f'Rate limited — waiting {wait}s before retry…')
+                    set_progress(source, step=f'Rate limited — waiting {wait}s before retry (attempt {attempt+1}/5)…')
                     time.sleep(wait)
                     continue
                 resp.raise_for_status()
@@ -281,11 +282,11 @@ def run_sync(source, fetch_fn, feed_prefix):
                 set_progress(source, chunks_done=i)
                 break
             except Exception as e:
-                if attempt == 2:
-                    logger.error(f"[{source}] Chunk {i} failed: {e}")
+                if attempt == 4:
+                    logger.error(f"[{source}] Chunk {i} failed after 5 attempts: {e}")
                     failed += 1
                 else:
-                    time.sleep(10)
+                    time.sleep(15)
         time.sleep(5)
 
     status   = 'error' if failed == len(chunks) else 'success'
