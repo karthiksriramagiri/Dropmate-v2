@@ -81,15 +81,54 @@ def init_db():
         """)
 
 # --- CWR ---
+def get_last_cwr_sync_timestamp():
+    """Return unix timestamp of last successful CWR sync, or 30 days ago if none."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT started_at FROM sync_runs WHERE source='cwr' AND status='success' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    if row:
+        try:
+            dt = datetime.strptime(row['started_at'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            return int(dt.timestamp())
+        except Exception:
+            pass
+    return int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
+
 def fetch_cwr_inventory():
-    set_progress('cwr', step='Fetching from CWR feed…', pct=5)
+    set_progress('cwr', step='Fetching active inventory from CWR…', pct=5)
     resp = requests.get(CWR_FEED_URL, params={
         'id': CWR_FEED_ID, 'version': 3, 'format': 'csv',
         'fields': 'sku,qty', 'ohtime': 0,
     }, timeout=120)
     resp.raise_for_status()
     rows = list(csv.DictReader(io.StringIO(resp.text), fieldnames=['sku', 'qty']))
-    return [{'sku': r['sku'], 'qty': r['qty']} for r in rows if r.get('sku')]
+    records = {r['sku']: {'sku': r['sku'], 'qty': r['qty']} for r in rows if r.get('sku')}
+
+    # Fetch discontinued SKUs since last sync and zero them out on Walmart
+    set_progress('cwr', step='Checking for discontinued SKUs…', pct=12)
+    try:
+        disctime = get_last_cwr_sync_timestamp()
+        dresp = requests.get(CWR_FEED_URL, params={
+            'id': CWR_FEED_ID, 'version': 3, 'format': 'csv',
+            'fields': 'sku', 'disctime': disctime,
+        }, timeout=60)
+        dresp.raise_for_status()
+        disc_count = 0
+        for line in dresp.text.splitlines():
+            sku = line.strip()
+            if sku and sku not in records:
+                records[sku] = {'sku': sku, 'qty': 0}
+                disc_count += 1
+        if disc_count:
+            logger.info(f"[cwr] Zeroing out {disc_count} discontinued SKUs")
+            set_progress('cwr', step=f'Found {disc_count} discontinued SKUs — zeroing out…', pct=18)
+        else:
+            logger.info(f"[cwr] No newly discontinued SKUs since last sync")
+    except Exception as e:
+        logger.warning(f"[cwr] Could not fetch discontinued SKUs: {e}")
+
+    return list(records.values())
 
 # --- Keystone ---
 class ImplicitFTPS(ftplib.FTP_TLS):
