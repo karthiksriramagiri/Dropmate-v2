@@ -1,4 +1,3 @@
-import paramiko
 import csv
 import io
 import requests
@@ -9,6 +8,8 @@ import logging
 import os
 import sqlite3
 import threading
+import xml.etree.ElementTree as ET
+from datetime import datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -17,17 +18,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 # --- Config ---
-SFTP_HOST      = os.getenv('SFTP_HOST', 'edi.cwrdistribution.com')
-SFTP_PORT      = int(os.getenv('SFTP_PORT', '22'))
-SFTP_USER      = os.getenv('SFTP_USER', 'hashshop')
-SFTP_PASS      = os.getenv('SFTP_PASS', 'bvsPN7ge')
-INVENTORY_PATH = '/out/inventory.csv'
+CWR_FEED_URL = 'https://cwrdistribution.com/feeds/productdownload.php'
+CWR_FEED_ID  = 'MPB_NDI2NzUwNDI2NzUwMTE1NQ=='
 
 WM_CLIENT_ID     = os.getenv('WM_CLIENT_ID', '47f10f25-5746-41a6-be4a-db812f949894')
 WM_CLIENT_SECRET = os.getenv('WM_CLIENT_SECRET', 'C11fEdT35CMZfGxND0q54-LgDsjKXsHVpQojyeYcGE0ulVWiqdTsZ-hvneSJpInP3cOWwmq_-8aKsigRUwDNRQ')
 WM_BASE_URL      = 'https://marketplace.walmartapis.com'
 
-SYNC_INTERVAL_MINUTES = int(os.getenv('SYNC_INTERVAL_MINUTES', '15'))
+SYNC_INTERVAL_MINUTES = int(os.getenv('SYNC_INTERVAL_MINUTES', '360'))
 DB_PATH               = os.getenv('DB_PATH', 'dropmate.db')
 PORT                  = int(os.getenv('PORT', '8080'))
 
@@ -54,16 +52,16 @@ def init_db():
 
 # --- CWR ---
 def fetch_cwr_inventory():
-    transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
-    transport.connect(username=SFTP_USER, password=SFTP_PASS)
-    sftp = paramiko.SFTPClient.from_transport(transport)
-    try:
-        with sftp.open(INVENTORY_PATH, 'r') as f:
-            content = f.read().decode('utf-8')
-        return list(csv.DictReader(io.StringIO(content)))
-    finally:
-        sftp.close()
-        transport.close()
+    # Use ohtime=0 to get all SKUs and their current quantities
+    resp = requests.get(CWR_FEED_URL, params={
+        'id':      CWR_FEED_ID,
+        'version': 3,
+        'format':  'csv',
+        'fields':  'sku,qty',
+        'ohtime':  0,
+    }, timeout=120)
+    resp.raise_for_status()
+    return list(csv.DictReader(io.StringIO(resp.text)))
 
 # --- Walmart ---
 def get_walmart_token():
