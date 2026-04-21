@@ -487,7 +487,7 @@ def trigger_sync():
     elif source == 'twh':
         threading.Thread(target=sync_twh, daemon=True).start()
     elif source == 'dandh':
-        threading.Thread(target=sync_dandh, daemon=True).start()
+        return jsonify({'status': 'disabled', 'source': 'dandh'}), 200
     else:
         threading.Thread(target=sync_cwr_keystone, daemon=True).start()
         threading.Thread(target=sync_twh, daemon=True).start()
@@ -500,7 +500,7 @@ if __name__ == '__main__':
     scheduler = BackgroundScheduler(timezone='America/New_York')
     scheduler.add_job(sync_cwr_keystone, 'cron', hour='0,6,12,18', minute=0)
     scheduler.add_job(sync_twh,          'cron', hour='3,9,15,21', minute=0)
-    scheduler.add_job(sync_dandh,        'cron', hour='1,7,13,19', minute=0)
+    # D&H disabled
     scheduler.start()
-    logger.info("Scheduler ready — CWR/Keystone: 12am/6am/12pm/6pm | TWH: 3am/9am/3pm/9pm | D&H: 1am/7am/1pm/7pm Eastern")
+    logger.info("Scheduler ready — CWR/Keystone: 12am/6am/12pm/6pm | TWH: 3am/9am/3pm/9pm Eastern")
     app.run(host='0.0.0.0', port=PORT)
