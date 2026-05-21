@@ -34,20 +34,15 @@ TWH_FTP_USER = 'HASHSHOPINC'
 TWH_FTP_PASS = 'v4E6EsGNvIBKpKu'
 TWH_FTP_FILE = 'invenfeed_6930.csv'
 
-DH_FTP_HOST  = 'ftp.dandh.com'
-DH_FTP_USER  = '3280530000FTP'
-DH_FTP_PASS  = '3rUnzEvfj86g'
-DH_ITEMLIST  = 'ITEMLIST'
-DH_DISCOITEM = 'DISCOITEM'
-
 WM_CLIENT_ID     = os.getenv('WM_CLIENT_ID', '47f10f25-5746-41a6-be4a-db812f949894')
 WM_CLIENT_SECRET = os.getenv('WM_CLIENT_SECRET', 'C11fEdT35CMZfGxND0q54-LgDsjKXsHVpQojyeYcGE0ulVWiqdTsZ-hvneSJpInP3cOWwmq_-8aKsigRUwDNRQ')
 WM_BASE_URL      = 'https://marketplace.walmartapis.com'
 
-DB_PATH    = os.getenv('DB_PATH', 'dropmate.db')
-PORT       = int(os.getenv('PORT', '8080'))
-CHUNK_SIZE = 25000
-EASTERN    = timezone(timedelta(hours=-4))
+DB_PATH      = os.getenv('DB_PATH', 'dropmate.db')
+PORT         = int(os.getenv('PORT', '8080'))
+CHUNK_SIZE   = 9500
+WM_SHIP_NODE = '10002518476'
+EASTERN      = timezone(timedelta(hours=-4))
 
 # --- In-memory progress tracking ---
 _progress = {}  # keyed by source: cwr / keystone / twh
@@ -252,7 +247,7 @@ def build_inventory_xml(records):
 def upload_bulk_feed(token, xml_data, feed_name):
     resp = requests.post(
         f'{WM_BASE_URL}/v3/feeds',
-        params={'feedType': 'inventory'},
+        params={'feedType': 'inventory', 'shipNode': WM_SHIP_NODE},
         headers={
             'Authorization':         f'Bearer {token}',
             'WM_SEC.ACCESS_TOKEN':   token,
@@ -370,60 +365,6 @@ def sync_cwr_keystone():
 def sync_twh():
     run_sync('twh', fetch_twh_inventory, 'TWH-DMv2')
 
-# --- D&H ---
-def fetch_dandh_inventory():
-    set_progress('dandh', step='Connecting to D&H FTP…', pct=5)
-    ftp = ftplib.FTP()
-    ftp.connect(DH_FTP_HOST, 21, timeout=30)
-    ftp.login(DH_FTP_USER, DH_FTP_PASS)
-    ftp.set_pasv(True)
-
-    set_progress('dandh', step='Downloading ITEMLIST…', pct=15)
-    buf = io.BytesIO()
-    ftp.retrbinary(f'RETR {DH_ITEMLIST}', buf.write)
-
-    set_progress('dandh', step='Downloading DISCOITEM…', pct=25)
-    disc_buf = io.BytesIO()
-    ftp.retrbinary(f'RETR {DH_DISCOITEM}', disc_buf.write)
-    ftp.quit()
-
-    set_progress('dandh', step='Parsing inventory…', pct=30)
-    records = {}
-    for line in buf.getvalue().decode('utf-8', errors='replace').splitlines():
-        cols = line.split('|')
-        if len(cols) < 5:
-            continue
-        sku = cols[4].strip()
-        if not sku:
-            continue
-        try:
-            qty = int(float(cols[1].strip() or '0'))
-        except ValueError:
-            qty = 0
-        records[sku] = {'sku': f'DANDH-{sku}', 'qty': qty}
-
-    # Zero out discontinued items from DISCOITEM (col 0 = SKU, space-padded)
-    disc_count = 0
-    for line in disc_buf.getvalue().decode('utf-8', errors='replace').splitlines():
-        cols = line.split('|')
-        if not cols:
-            continue
-        sku = cols[0].strip()
-        if sku and sku not in records:
-            records[sku] = {'sku': f'DANDH-{sku}', 'qty': 0}
-            disc_count += 1
-
-    if disc_count:
-        logger.info(f"[dandh] Zeroing out {disc_count} discontinued SKUs")
-        set_progress('dandh', step=f'Found {disc_count} discontinued SKUs — zeroing out…', pct=35, disc_count=disc_count)
-    else:
-        set_progress('dandh', disc_count=0)
-
-    return list(records.values()), disc_count
-
-def sync_dandh():
-    run_sync('dandh', fetch_dandh_inventory, 'DH-DMv2')
-
 # --- Flask ---
 app = Flask(__name__)
 CORS(app)
@@ -444,9 +385,6 @@ def status():
         last_twh = conn.execute(
             "SELECT * FROM sync_runs WHERE source='twh' AND status!='running' ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        last_dh = conn.execute(
-            "SELECT * FROM sync_runs WHERE source='dandh' AND status!='running' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
         is_running = conn.execute(
             "SELECT COUNT(*) as c FROM sync_runs WHERE status='running'"
         ).fetchone()['c'] > 0
@@ -455,7 +393,6 @@ def status():
         'last_cwr':      dict(last_cwr)  if last_cwr  else None,
         'last_keystone': dict(last_ks)   if last_ks   else None,
         'last_twh':      dict(last_twh)  if last_twh  else None,
-        'last_dandh':    dict(last_dh)   if last_dh   else None,
     })
 
 @app.route('/api/progress')
@@ -486,12 +423,9 @@ def trigger_sync():
         threading.Thread(target=run_sync, args=('keystone', fetch_keystone_inventory, 'KS-DMv2'), daemon=True).start()
     elif source == 'twh':
         threading.Thread(target=sync_twh, daemon=True).start()
-    elif source == 'dandh':
-        return jsonify({'status': 'disabled', 'source': 'dandh'}), 200
     else:
         threading.Thread(target=sync_cwr_keystone, daemon=True).start()
         threading.Thread(target=sync_twh, daemon=True).start()
-        threading.Thread(target=sync_dandh, daemon=True).start()
     return jsonify({'status': 'started', 'source': source})
 
 if __name__ == '__main__':
@@ -500,7 +434,6 @@ if __name__ == '__main__':
     scheduler = BackgroundScheduler(timezone='America/New_York')
     scheduler.add_job(sync_cwr_keystone, 'cron', hour='0,6,12,18', minute=0)
     scheduler.add_job(sync_twh,          'cron', hour='3,9,15,21', minute=0)
-    # D&H disabled
     scheduler.start()
     logger.info("Scheduler ready — CWR/Keystone: 12am/6am/12pm/6pm | TWH: 3am/9am/3pm/9pm Eastern")
     app.run(host='0.0.0.0', port=PORT)
