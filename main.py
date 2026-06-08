@@ -416,24 +416,11 @@ def runs():
 
 @app.route('/api/sync', methods=['POST'])
 def trigger_sync():
-    source = request.json.get('source', 'all') if request.json else 'all'
-    if source == 'cwr':
-        threading.Thread(target=run_sync, args=('cwr', fetch_cwr_inventory, 'CWR-DMv2'), daemon=True).start()
-    elif source == 'keystone':
-        threading.Thread(target=run_sync, args=('keystone', fetch_keystone_inventory, 'KS-DMv2'), daemon=True).start()
-    elif source == 'twh':
-        threading.Thread(target=sync_twh, daemon=True).start()
-    else:
-        threading.Thread(target=sync_cwr_keystone, daemon=True).start()
-        threading.Thread(target=sync_twh, daemon=True).start()
-    return jsonify({'status': 'started', 'source': source})
+    return jsonify({'status': 'disabled', 'message': 'All sync has been disabled for this account.'}), 503
 
 if __name__ == '__main__':
     init_db()
     # No startup sync — scheduler handles it at fixed times
-    scheduler = BackgroundScheduler(timezone='America/New_York')
-    scheduler.add_job(sync_cwr_keystone, 'cron', hour='0,6,12,18', minute=0)
-    scheduler.add_job(sync_twh,          'cron', hour='3,9,15,21', minute=0)
-    scheduler.start()
-    logger.info("Scheduler ready — CWR/Keystone: 12am/6am/12pm/6pm | TWH: 3am/9am/3pm/9pm Eastern")
+    # Sync disabled — no scheduler jobs running
+    logger.info("Sync disabled — scheduler not started")
     app.run(host='0.0.0.0', port=PORT)
